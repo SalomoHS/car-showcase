@@ -1,0 +1,101 @@
+{
+  "theme": "Light",
+  "archetype": "4 (Swiss & High-Contrast)",
+  "colors": {
+    "background": "#FFFFFF",
+    "surface": "#F5F5F7",
+    "primary": "#000000",
+    "text_main": "#1D1D1F",
+    "text_muted": "#86868B",
+    "accent": "#000000"
+  },
+  "typography": {
+    "heading_font": "Outfit",
+    "body_font": "Satoshi",
+    "scale": {
+      "h1": "text-4xl sm:text-5xl lg:text-6xl tracking-tighter font-light",
+      "h2": "text-2xl sm:text-3xl lg:text-4xl tracking-tight",
+      "body": "text-base leading-relaxed"
+    }
+  },
+  "layout": {
+    "spacing_scale": "p-4, p-8, p-12, p-24",
+    "container_classes": "max-w-7xl mx-auto px-4 sm:px-8 h-screen flex flex-col items-center justify-center",
+    "strategy": "Centralized focal point with generous negative space. Minimalist UI overlays."
+  },
+  "components": {
+    "buttons": {
+      "style": "pill-shaped or crisp rectangles with 1px border. Minimal shadow.",
+      "hover_state": "bg-black text-white transition-colors duration-300",
+      "active_state": "scale-95",
+      "wrapper": "flex gap-4 p-6 bg-white/70 backdrop-blur-xl rounded-full border border-black/5 shadow-[0_8px_32px_rgba(0,0,0,0.08)] z-10"
+    },
+    "image_viewer": {
+      "style": "w-full max-w-5xl aspect-video relative flex items-center justify-center pointer-events-none",
+      "image_style": "w-full h-full object-contain"
+    }
+  },
+  "images": {
+    "car_sequence": [
+      {
+        "slug": "car_front",
+        "url": "https://static.prod-images.emergentagent.com/jobs/95a9dfaa-dc55-432f-907f-051e16b9f04f/images/298f1b2e890a99124d0dbddcba336452dce69019a3909dea1995a690ab495e68.png",
+        "angle": 0,
+        "index": 0
+      },
+      {
+        "slug": "car_front_right",
+        "url": "https://static.prod-images.emergentagent.com/jobs/95a9dfaa-dc55-432f-907f-051e16b9f04f/images/9591bde5e6a2c3f75fc0c87011746f09139e2fcbceb7fee73da45456c74e9fee.png",
+        "angle": 45,
+        "index": 1
+      },
+      {
+        "slug": "car_right",
+        "url": "https://static.prod-images.emergentagent.com/jobs/95a9dfaa-dc55-432f-907f-051e16b9f04f/images/7c025033ef071efdcd8c22d734e90e91b6f63542629289da2e9406830e333c29.png",
+        "angle": 90,
+        "index": 2
+      },
+      {
+        "slug": "car_back_right",
+        "url": "https://static.prod-images.emergentagent.com/jobs/95a9dfaa-dc55-432f-907f-051e16b9f04f/images/ecb7921fda901323bbc10b914cfc9cb4da1e80ef2ded90f88c65237f4770071d.png",
+        "angle": 135,
+        "index": 3
+      },
+      {
+        "slug": "car_back",
+        "url": "https://static.prod-images.emergentagent.com/jobs/95a9dfaa-dc55-432f-907f-051e16b9f04f/images/4af1921c770f3fc4cb6487bda801ad2daa427e3473fcd77718db83bb77a7019b.png",
+        "angle": 180,
+        "index": 4
+      },
+      {
+        "slug": "car_back_left",
+        "url": "https://static.prod-images.emergentagent.com/jobs/95a9dfaa-dc55-432f-907f-051e16b9f04f/images/149708317cde2f58de9faa0fcddf1b5ae29030bd06cef2ecbe91719359d5bc05.png",
+        "angle": 225,
+        "index": 5
+      },
+      {
+        "slug": "car_left",
+        "url": "https://static.prod-images.emergentagent.com/jobs/95a9dfaa-dc55-432f-907f-051e16b9f04f/images/6224d6127ad9c777771eeb083c2e8f78ade41f0b652de50d7b2a7b39c64173e5.png",
+        "angle": 270,
+        "index": 6
+      },
+      {
+        "slug": "car_front_left",
+        "url": "https://static.prod-images.emergentagent.com/jobs/95a9dfaa-dc55-432f-907f-051e16b9f04f/images/05629f26f6b88849fcbd79ea363eb7d57e48a7709cc8f64c33defeeefb280f51.png",
+        "angle": 315,
+        "index": 7
+      }
+    ]
+  },
+  "instructions_to_main_agent": [
+    "Build a React component to display the car images sequence.",
+    "Implement 4 buttons: Front, Right, Back, Left.",
+    "Map these buttons to indices: Front(0), Right(2), Back(4), Left(6).",
+    "Preload all 8 images on mount using a standard `new Image().src = ...` approach to prevent flickering.",
+    "Use framer-motion `useSpring` or a `requestAnimationFrame` loop with lerping to smoothly interpolate a `currentFrame` floating point value to the `targetFrame` integer value.",
+    "Calculate the shortest path on the circular sequence. E.g., if you are at 0 (Front) and click Left (index 6), the shortest path is to subtract 2, so the target becomes -2. Round the interpolated value to get the current frame index, and use `((roundedValue % 8) + 8) % 8` to get the actual array index for the image.",
+    "Do NOT rotate a single image using CSS transform. You must update the `src` of an `<img />` tag based on the current sequence index.",
+    "Add 'data-testid' to all buttons (e.g. data-testid='angle-btn-front').",
+    "Create a clean minimalist layout with a white background. No bulky cards, no unnecessary text. The car and the angle buttons are the hero."
+  ]
+}
