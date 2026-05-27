@@ -1,34 +1,167 @@
-.App-logo {
-    height: 40vmin;
-    pointer-events: none;
+.car-showcase-container {
+  min-height: 100vh;
+  background-color: #FFFFFF;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+  position: relative;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-    .App-logo {
-        animation: App-logo-spin infinite 20s linear;
-    }
+.car-title {
+  font-family: 'Outfit', sans-serif;
+  font-weight: 300;
+  font-size: 2.25rem;
+  letter-spacing: -0.05em;
+  color: #1D1D1F;
+  margin: 0 0 2rem 0;
+  text-align: center;
 }
 
-.App-header {
-    background-color: #0f0f10;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    font-size: calc(10px + 2vmin);
-    color: white;
+@media (min-width: 640px) {
+  .car-title {
+    font-size: 3rem;
+    margin-bottom: 2.5rem;
+  }
 }
 
-.App-link {
-    color: #61dafb;
+@media (min-width: 1024px) {
+  .car-title {
+    font-size: 3.75rem;
+    margin-bottom: 3rem;
+  }
 }
 
-@keyframes App-logo-spin {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
+.car-image-container {
+  width: 100%;
+  max-width: 80rem;
+  aspect-ratio: 16 / 9;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 2rem;
+  pointer-events: none;
+  background-color: #F5F5F7;
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+
+.car-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.controls-wrapper {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-radius: 9999px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+  z-index: 10;
+  max-width: 95vw;
+}
+
+@media (min-width: 640px) {
+  .controls-wrapper {
+    gap: 1rem;
+    padding: 1.5rem;
+  }
+}
+
+.angle-button {
+  font-family: 'Outfit', sans-serif;
+  font-weight: 500;
+  padding: 0.5rem 1rem;
+  border-radius: 9999px;
+  border: 1px solid #000000;
+  background: transparent;
+  color: #1D1D1F;
+  cursor: pointer;
+  font-size: 0.875rem;
+  letter-spacing: 0.025em;
+  transition: background-color 0.3s ease, color 0.3s ease, transform 0.15s ease;
+  outline: none;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+@media (min-width: 640px) {
+  .angle-button {
+    padding: 0.75rem 2rem;
+    font-size: 1rem;
+  }
+}
+
+.angle-button:hover {
+  background-color: #000000;
+  color: #FFFFFF;
+}
+
+.angle-button:active {
+  transform: scale(0.95);
+}
+
+.angle-button.active {
+  background-color: #000000;
+  color: #FFFFFF;
+}
+
+.frame-indicator {
+  margin-top: 1.5rem;
+  font-family: 'Outfit', sans-serif;
+  font-weight: 400;
+  font-size: 0.875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #86868B;
+}
+
+/* Loading state */
+.loading-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+  max-width: 24rem;
+}
+
+.loading-label {
+  font-family: 'Outfit', sans-serif;
+  font-weight: 400;
+  font-size: 0.875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #1D1D1F;
+}
+
+.loading-bar {
+  width: 100%;
+  height: 2px;
+  background-color: #E5E5EA;
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.loading-bar-fill {
+  height: 100%;
+  background-color: #000000;
+  transition: width 0.2s ease-out;
+}
+
+.loading-percent {
+  font-family: 'Outfit', sans-serif;
+  font-weight: 300;
+  font-size: 2rem;
+  color: #1D1D1F;
+  font-variant-numeric: tabular-nums;
 }
