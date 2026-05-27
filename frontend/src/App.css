@@ -42,10 +42,45 @@
   align-items: center;
   justify-content: center;
   margin-bottom: 2rem;
-  pointer-events: none;
   background-color: #F5F5F7;
   border-radius: 0.75rem;
   overflow: hidden;
+  touch-action: none;
+  user-select: none;
+}
+
+.car-image-container.draggable {
+  cursor: grab;
+}
+
+.car-image-container.dragging {
+  cursor: grabbing;
+}
+
+.car-image-container.dragging .drag-hint {
+  opacity: 0;
+}
+
+.drag-hint {
+  position: absolute;
+  bottom: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: 'Outfit', sans-serif;
+  font-weight: 400;
+  font-size: 0.7rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: #86868B;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  padding: 0.4rem 0.9rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  pointer-events: none;
+  opacity: 0.85;
+  transition: opacity 0.3s ease;
 }
 
 .car-image {

@@ -36,9 +36,16 @@
 - Loading progress bar shown while 36 images preload
 - Frame indicator below buttons (e.g., "FRONT · 1/36")
 
+### 2026-02-27 — Drag-to-rotate (P1)
+- Added mouse + touch drag interaction on car image container
+- Sensitivity: 18px per frame; drag updates current frame in real-time
+- Dragging during an active animation cancels it cleanly
+- Active angle button highlights when drag lands within 1.5 frames of a named angle
+- "DRAG TO ROTATE" hint chip; grab/grabbing cursors; `touch-action: none` for mobile
+- Full 360° exploration now possible — not just 4 named stops
+
 ## Backlog
 ### P1
-- Add drag-to-rotate interaction (currently button-only)
 - Allow user to switch between different car models
 
 ### P2
