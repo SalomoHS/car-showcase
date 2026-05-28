@@ -153,7 +153,7 @@ html, body, #root {
   flex-direction: column;
   align-items: center;
   gap: 0.75rem;
-  width: min(90vw, 36rem);
+  width: min(94vw, 56rem);
 }
 
 /* ────────── VIEW-MORE BUTTON ────────── */
@@ -224,8 +224,8 @@ html, body, #root {
 }
 
 .cars-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  display: flex;
+  flex-direction: row;
   gap: 0.75rem;
   padding: 1rem;
   background: rgba(20, 20, 22, 0.7);
@@ -234,8 +234,25 @@ html, body, #root {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 1.25rem;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-  max-height: 50vh;
-  overflow-y: auto;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+.cars-grid::-webkit-scrollbar {
+  height: 6px;
+}
+.cars-grid::-webkit-scrollbar-track {
+  background: transparent;
+}
+.cars-grid::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.2);
+  border-radius: 9999px;
+}
+.cars-grid::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.35);
 }
 
 /* ────────── CAR TILE ────────── */
@@ -244,6 +261,9 @@ html, body, #root {
   display: flex;
   flex-direction: column;
   align-items: stretch;
+  flex: 0 0 180px;
+  width: 180px;
+  scroll-snap-align: start;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 0.85rem;
@@ -328,6 +348,7 @@ html, body, #root {
   align-items: center;
   gap: 0.5rem;
   width: 100%;
+  max-width: 36rem;
   background: rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
@@ -443,7 +464,8 @@ html, body, #root {
   .side-arrow-left  { left: 0.75rem; }
   .side-arrow-right { right: 0.75rem; }
   .bottom-dock { bottom: 1rem; width: calc(100vw - 1.5rem); gap: 0.5rem; }
-  .cars-grid { grid-template-columns: repeat(2, 1fr); padding: 0.75rem; }
+  .cars-grid { padding: 0.75rem; }
+  .car-tile { flex: 0 0 150px; width: 150px; }
   .view-more-btn { font-size: 0.7rem; padding: 0.45rem 1rem; }
   .chatbox-input { font-size: 0.85rem; }
 }
