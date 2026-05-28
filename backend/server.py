@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, HTTPException
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -6,7 +6,7 @@ import os
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
-from typing import List
+from typing import List, Optional
 import uuid
 from datetime import datetime, timezone
 
@@ -65,6 +65,58 @@ async def get_status_checks():
             check['timestamp'] = datetime.fromisoformat(check['timestamp'])
     
     return status_checks
+
+
+# ──────────────────── TEST DRIVE LEADS ────────────────────
+class Lead(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    phone: str
+    location: str
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    car_id: str
+    car_name: str
+    preferred_date: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class LeadCreate(BaseModel):
+    name: str
+    phone: str
+    location: str
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    car_id: str
+    car_name: str
+    preferred_date: Optional[str] = None
+    notes: Optional[str] = None
+
+
+@api_router.post("/leads", response_model=Lead)
+async def create_lead(payload: LeadCreate):
+    if not payload.name.strip() or not payload.phone.strip() or not payload.location.strip():
+        raise HTTPException(status_code=400, detail="name, phone and location are required")
+
+    lead = Lead(**payload.model_dump())
+    doc = lead.model_dump()
+    doc['created_at'] = doc['created_at'].isoformat()
+
+    await db.leads.insert_one(doc)
+    logger.info(f"New test-drive lead: {lead.name} ({lead.phone}) — {lead.car_name} @ {lead.location}")
+    return lead
+
+
+@api_router.get("/leads", response_model=List[Lead])
+async def list_leads():
+    leads = await db.leads.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    for l in leads:
+        if isinstance(l.get('created_at'), str):
+            l['created_at'] = datetime.fromisoformat(l['created_at'])
+    return leads
 
 # Include the router in the main app
 app.include_router(api_router)

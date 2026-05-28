@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { ChevronLeft, ChevronRight, ChevronUp, Send, RotateCw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronUp, Send, RotateCw, Calendar } from 'lucide-react';
+import TestDriveModal from './TestDriveModal';
 
 // ──────────────────── DATA ────────────────────
 const AMG_FRAMES = Array.from({ length: 36 }, (_, i) =>
@@ -86,6 +87,7 @@ const CarShowcase = () => {
   const [amgLoaded, setAmgLoaded] = useState(false);
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
+  const [testDriveOpen, setTestDriveOpen] = useState(false);
 
   const currentFrameRef = useRef(0);
   const dragRef = useRef({ isDragging: false, startX: 0, startFrame: 0 });
@@ -236,10 +238,20 @@ const CarShowcase = () => {
         <div className="car-meta-tagline">{selectedCar.tagline}</div>
       </div>
 
-      {/* Top-right: spin hint */}
+      {/* Top-right: Test Drive CTA (lead capture) */}
+      <button
+        className="test-drive-cta"
+        onClick={() => setTestDriveOpen(true)}
+        data-testid="test-drive-cta-btn"
+      >
+        <Calendar size={16} strokeWidth={2} />
+        <span>I want Test Drive</span>
+      </button>
+
+      {/* Bottom-left: subtle spin hint for AMG */}
       {selectedCar.spinEnabled && !showLoading && (
-        <div className="spin-badge" data-testid="spin-badge">
-          <RotateCw size={14} strokeWidth={1.8} />
+        <div className="spin-hint" data-testid="spin-hint">
+          <RotateCw size={12} strokeWidth={1.8} />
           <span>Drag to rotate · 360°</span>
         </div>
       )}
@@ -343,6 +355,14 @@ const CarShowcase = () => {
           </button>
         </form>
       </div>
+
+      {/* Test Drive lead-capture modal */}
+      {testDriveOpen && (
+        <TestDriveModal
+          car={selectedCar}
+          onClose={() => setTestDriveOpen(false)}
+        />
+      )}
     </div>
   );
 };

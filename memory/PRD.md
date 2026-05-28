@@ -57,6 +57,14 @@
 - Keyboard nav (←/→) + Escape closes menu
 - Chatbox is UI-only (input + send button; no LLM wired yet)
 
+### 2026-02-28 — Test Drive Lead Capture (CTA + Modal + Backend)
+- **Top-right CTA**: Prominent white "I want Test Drive" pill (with calendar icon) replaces the spin badge
+- **Spin hint** relocated to bottom-left as a subtle chip
+- **Modal**: Glass-morphism dark form with: full name, phone, location, "Detect automatically" button (browser geolocation + OpenStreetMap reverse-geocode), preferred date (optional)
+- **Success state**: Green check, personalized confirmation message echoing customer name, phone, car, and location
+- **Backend** `POST /api/leads` & `GET /api/leads` — leads stored in MongoDB `leads` collection with car_id, car_name, lat/lng (when detected), and timestamp
+- Esc/click-outside/X all close the modal; error states inline (red banner)
+
 ## Backlog
 ### P1
 - Wire chatbox to an LLM (Claude/GPT) — "Ask the car" Q&A about specs, features, pricing

@@ -454,7 +454,346 @@ html, body, #root {
   font-variant-numeric: tabular-nums;
 }
 
-/* ────────── RESPONSIVE ────────── */
+/* ────────── TEST DRIVE CTA (top-right) ────────── */
+.test-drive-cta {
+  position: absolute;
+  top: 2.5rem;
+  right: 2.5rem;
+  z-index: 25;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.85rem 1.5rem;
+  background: #FFFFFF;
+  color: #000000;
+  border: 1px solid #FFFFFF;
+  border-radius: 9999px;
+  font-family: 'Outfit', sans-serif;
+  font-weight: 500;
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+  transition: transform 0.25s ease, background-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+.test-drive-cta:hover {
+  background: #000000;
+  color: #FFFFFF;
+  transform: scale(1.04);
+  box-shadow: 0 14px 50px rgba(0, 0, 0, 0.55);
+}
+
+.test-drive-cta:active {
+  transform: scale(0.97);
+}
+
+/* ────────── SPIN HINT (moved to bottom-left) ────────── */
+.spin-hint {
+  position: absolute;
+  bottom: 2rem;
+  left: 2rem;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.4rem 0.8rem;
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 9999px;
+  font-size: 0.65rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.7);
+  pointer-events: none;
+}
+
+/* ────────── MODAL ────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  animation: fadeIn 0.25s ease-out;
+}
+
+.modal-card {
+  position: relative;
+  width: 100%;
+  max-width: 30rem;
+  max-height: 90vh;
+  overflow-y: auto;
+  background: rgba(22, 22, 24, 0.96);
+  backdrop-filter: blur(32px);
+  -webkit-backdrop-filter: blur(32px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 1.5rem;
+  padding: 2.25rem 2rem 1.75rem;
+  color: #FFFFFF;
+  box-shadow: 0 40px 80px rgba(0, 0, 0, 0.6);
+  animation: modalRise 0.4s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+@keyframes modalRise {
+  from { opacity: 0; transform: translateY(20px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)    scale(1);    }
+}
+
+.modal-close {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.modal-close:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.modal-header {
+  margin-bottom: 1.5rem;
+}
+
+.modal-eyebrow {
+  font-family: 'Outfit', sans-serif;
+  font-weight: 400;
+  font-size: 0.7rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.55);
+  margin-bottom: 0.5rem;
+}
+
+.modal-title {
+  font-family: 'Outfit', sans-serif;
+  font-weight: 200;
+  font-size: 2rem;
+  letter-spacing: -0.02em;
+  color: #FFFFFF;
+  margin: 0 0 0.5rem 0;
+  line-height: 1.1;
+}
+
+.modal-title-accent {
+  font-weight: 500;
+}
+
+.modal-sub {
+  font-family: 'Outfit', sans-serif;
+  font-weight: 300;
+  font-size: 0.88rem;
+  color: rgba(255, 255, 255, 0.65);
+  margin: 0;
+}
+
+.modal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.field-label {
+  font-family: 'Outfit', sans-serif;
+  font-weight: 400;
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.7);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.detect-loc-btn {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.85);
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.15rem 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: rgba(255, 255, 255, 0.3);
+}
+
+.detect-loc-btn:hover {
+  color: #FFFFFF;
+  text-decoration-color: rgba(255, 255, 255, 0.8);
+}
+
+.detect-loc-btn:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.spin-icon {
+  animation: rotate 1s linear infinite;
+}
+
+@keyframes rotate {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.field-input {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.6rem;
+  padding: 0.75rem 0.95rem;
+  font-family: 'Outfit', sans-serif;
+  font-weight: 300;
+  font-size: 0.95rem;
+  color: #FFFFFF;
+  outline: none;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+  color-scheme: dark;
+}
+
+.field-input::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.field-input:focus {
+  border-color: rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.modal-primary-btn {
+  margin-top: 0.5rem;
+  width: 100%;
+  padding: 0.95rem 1.5rem;
+  background: #FFFFFF;
+  color: #000000;
+  border: none;
+  border-radius: 9999px;
+  font-family: 'Outfit', sans-serif;
+  font-weight: 500;
+  font-size: 0.9rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  transition: transform 0.2s ease, background-color 0.2s ease;
+}
+
+.modal-primary-btn:hover:not(:disabled) {
+  background: #f0f0f0;
+  transform: translateY(-1px);
+}
+
+.modal-primary-btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.modal-primary-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.modal-disclaimer {
+  text-align: center;
+  font-family: 'Outfit', sans-serif;
+  font-weight: 300;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.45);
+  margin: 0.25rem 0 0;
+}
+
+.modal-error {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.65rem 0.8rem;
+  background: rgba(255, 80, 80, 0.1);
+  border: 1px solid rgba(255, 100, 100, 0.3);
+  border-radius: 0.6rem;
+  color: #ff9b9b;
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.82rem;
+}
+
+/* Success state */
+.modal-success {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 1rem 0;
+}
+
+.success-icon {
+  color: #6ee7b7;
+  margin-bottom: 1rem;
+}
+
+.modal-success-body {
+  font-family: 'Outfit', sans-serif;
+  font-weight: 300;
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.75);
+  line-height: 1.55;
+  margin: 0 0 1.5rem 0;
+}
+
+.modal-success-body strong {
+  color: #FFFFFF;
+  font-weight: 500;
+}
+
+/* ────────── RESPONSIVE FOR CTA/MODAL ────────── */
+@media (max-width: 640px) {
+  .test-drive-cta {
+    top: 1.25rem;
+    right: 1.25rem;
+    padding: 0.65rem 1.1rem;
+    font-size: 0.72rem;
+  }
+  .spin-hint {
+    bottom: 8rem;
+    left: 1rem;
+    font-size: 0.58rem;
+  }
+  .modal-card {
+    padding: 2rem 1.25rem 1.5rem;
+    border-radius: 1.25rem;
+  }
+  .modal-title { font-size: 1.6rem; }
+}
 @media (max-width: 640px) {
   .car-meta { top: 1.25rem; left: 1.25rem; }
   .car-meta-brand { font-size: 0.65rem; }
