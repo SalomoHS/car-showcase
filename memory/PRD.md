@@ -45,7 +45,22 @@
 - Full 360° exploration now possible — not just 4 named stops
 
 ## Backlog
+### 2026-02-28 — Full-screen redesign + multi-car selector
+- **Full-screen layout**: car image now covers entire viewport (object-fit: cover)
+- **Removed** Front/Right/Back/Left angle buttons (drag-to-rotate kept for AMG)
+- **Side arrows** (left/right) center vertically — quick prev/next car navigation
+- **Bottom dock**: "VIEW MORE CARS" pill + glass chatbox input
+- **Expandable menu** opens above the dock, showing all cars in a glass-morphism grid with thumbnail + brand + model
+- **5 cars in catalog**: Mercedes-AMG GT R (360°), Toyota Veloz, Ferrari LaFerrari, Chevrolet Camaro SS, Porsche 911 Carrera
+- Car meta overlay in top-left (brand + model + tagline); spin badge in top-right for AMG
+- Dark cinematic theme (#0a0a0c) replacing white background to showcase cars
+- Keyboard nav (←/→) + Escape closes menu
+- Chatbox is UI-only (input + send button; no LLM wired yet)
+
+## Backlog
 ### P1
+- Wire chatbox to an LLM (Claude/GPT) — "Ask the car" Q&A about specs, features, pricing
+- Add 360° spin sequences for more cars (currently only AMG GT)
 - Allow user to switch between different car models
 
 ### P2
