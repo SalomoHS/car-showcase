@@ -1,6 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { ChevronLeft, ChevronRight, ChevronUp, Send, RotateCw, Calendar } from 'lucide-react';
+import axios from 'axios';
 import TestDriveModal from './TestDriveModal';
+import AvatarResponse from './AvatarResponse';
+
+const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 // ──────────────────── DATA ────────────────────
 const AMG_FRAMES = Array.from({ length: 36 }, (_, i) =>
@@ -89,6 +93,12 @@ const CarShowcase = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [testDriveOpen, setTestDriveOpen] = useState(false);
 
+  // Aria avatar chat state
+  const [avatarStatus, setAvatarStatus] = useState('idle'); // idle | thinking | generating | speaking
+  const [avatarText, setAvatarText] = useState('');
+  const [avatarVideoUrl, setAvatarVideoUrl] = useState(null);
+  const [chatSessionId, setChatSessionId] = useState(null);
+
   const currentFrameRef = useRef(0);
   const dragRef = useRef({ isDragging: false, startX: 0, startFrame: 0 });
 
@@ -120,6 +130,11 @@ const CarShowcase = () => {
   useEffect(() => {
     setImageIndex(0);
     currentFrameRef.current = 0;
+    // Reset avatar conversation when switching cars
+    setAvatarText('');
+    setAvatarVideoUrl(null);
+    setAvatarStatus('idle');
+    setChatSessionId(null);
   }, [selectedCarId]);
 
   // ──────────────── Car switching ────────────────
@@ -191,10 +206,36 @@ const CarShowcase = () => {
     return () => window.removeEventListener('keydown', onKey);
   }, [currentIdx]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleChatSubmit = (e) => {
+  const handleChatSubmit = async (e) => {
     e.preventDefault();
-    if (!chatValue.trim()) return;
+    const msg = chatValue.trim();
+    if (!msg || avatarStatus === 'thinking' || avatarStatus === 'generating') return;
+
     setChatValue('');
+    setAvatarStatus('thinking');
+    setAvatarText('');
+    setAvatarVideoUrl(null);
+
+    try {
+      const { data } = await axios.post(`${API}/chat-with-avatar`, {
+        message: msg,
+        car_id: selectedCar.id,
+        car_name: `${selectedCar.brand} ${selectedCar.model}`,
+        car_tagline: selectedCar.tagline || '',
+        session_id: chatSessionId,
+        generate_video: true,
+      }, { timeout: 60000 });
+
+      setAvatarText(data.text || '');
+      setAvatarVideoUrl(data.video_url || null);
+      setChatSessionId(data.session_id || null);
+      setAvatarStatus(data.video_url ? 'speaking' : 'idle');
+    } catch (err) {
+      console.error('Chat failed', err);
+      setAvatarText("Sorry, I couldn't reach the showroom server. Please try again.");
+      setAvatarVideoUrl(null);
+      setAvatarStatus('idle');
+    }
   };
 
   // Loading screen only blocks if AMG is current and not yet loaded
@@ -317,6 +358,14 @@ const CarShowcase = () => {
           </div>
         </div>
 
+        {/* Aria avatar response (sits above the view-more button) */}
+        <AvatarResponse
+          status={avatarStatus}
+          text={avatarText}
+          videoUrl={avatarVideoUrl}
+          onVideoEnded={() => setAvatarStatus('idle')}
+        />
+
         {/* View more cars button */}
         <button
           className={`view-more-btn ${menuOpen ? 'active' : ''}`}
@@ -341,15 +390,21 @@ const CarShowcase = () => {
             type="text"
             value={chatValue}
             onChange={(e) => setChatValue(e.target.value)}
-            placeholder={`Ask about the ${selectedCar.brand} ${selectedCar.model}…`}
+            placeholder={
+              avatarStatus === 'thinking' || avatarStatus === 'generating'
+                ? 'Aria is preparing your answer…'
+                : `Ask Aria about the ${selectedCar.brand} ${selectedCar.model}…`
+            }
             className="chatbox-input"
             data-testid="chatbox-input"
+            disabled={avatarStatus === 'thinking' || avatarStatus === 'generating'}
           />
           <button
             type="submit"
             className="chatbox-send"
             data-testid="chatbox-send"
             aria-label="Send"
+            disabled={!chatValue.trim() || avatarStatus === 'thinking' || avatarStatus === 'generating'}
           >
             <Send size={16} strokeWidth={1.8} />
           </button>

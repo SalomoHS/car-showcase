@@ -4,11 +4,15 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
+import asyncio
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional
 import uuid
 from datetime import datetime, timezone
+import httpx
+from emergentintegrations.llm.chat import LlmChat, UserMessage
+from fastapi.responses import FileResponse
 
 
 ROOT_DIR = Path(__file__).parent
@@ -117,6 +121,148 @@ async def list_leads():
         if isinstance(l.get('created_at'), str):
             l['created_at'] = datetime.fromisoformat(l['created_at'])
     return leads
+
+
+# ──────────────────── VIRTUAL SALES AVATAR (LLM + D-ID) ────────────────────
+EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY')
+DID_API_KEY = os.environ.get('DID_API_KEY')
+DID_PRESENTER_IMAGE = os.environ.get('DID_PRESENTER_IMAGE')
+DID_VOICE_ID = os.environ.get('DID_VOICE_ID', 'en-US-AriaNeural')
+DID_BASE = 'https://api.d-id.com'
+
+# Local cache for D-ID videos (proxied to avoid CORS issues with S3 signed URLs)
+VIDEO_CACHE_DIR = Path('/tmp/avatar_videos')
+VIDEO_CACHE_DIR.mkdir(exist_ok=True)
+
+
+class ChatRequest(BaseModel):
+    message: str
+    car_id: str
+    car_name: str
+    car_tagline: Optional[str] = ''
+    session_id: Optional[str] = None
+    generate_video: bool = True  # set False for text-only fast response
+
+
+class ChatResponse(BaseModel):
+    text: str
+    video_url: Optional[str] = None
+    session_id: str
+
+
+async def generate_llm_response(message: str, car_name: str, car_tagline: str, session_id: str) -> str:
+    system_prompt = (
+        f"You are Aria, a friendly and knowledgeable luxury car sales specialist. "
+        f"The customer is currently viewing the {car_name} ({car_tagline}). "
+        "Answer their question in 2-3 short sentences with a warm, conversational tone. "
+        "Be specific about the car when relevant, and gently encourage interest without being pushy. "
+        "Never mention you are an AI; speak as Aria the sales specialist. "
+        "Keep responses under 280 characters so the avatar video stays short."
+    )
+    chat = LlmChat(
+        api_key=EMERGENT_LLM_KEY,
+        session_id=session_id,
+        system_message=system_prompt,
+    ).with_model("openai", "gpt-4.1-mini")
+
+    response = await chat.send_message(UserMessage(text=message))
+    return response.strip()
+
+
+async def generate_did_talk(text: str) -> Optional[str]:
+    """Create a D-ID talk and poll until done. Returns the MP4 result_url, or None on failure."""
+    if not DID_API_KEY or not DID_PRESENTER_IMAGE:
+        return None
+
+    headers = {
+        "Authorization": f"Basic {DID_API_KEY}",
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "source_url": DID_PRESENTER_IMAGE,
+        "script": {
+            "type": "text",
+            "input": text,
+            "provider": {"type": "microsoft", "voice_id": DID_VOICE_ID},
+        },
+    }
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        create = await client.post(f"{DID_BASE}/talks", json=payload, headers=headers)
+        if create.status_code >= 400:
+            logger.error(f"D-ID create failed: {create.status_code} {create.text}")
+            return None
+        talk_id = create.json().get("id")
+        if not talk_id:
+            return None
+
+        # Poll up to 30s
+        for _ in range(15):
+            await asyncio.sleep(2)
+            poll = await client.get(f"{DID_BASE}/talks/{talk_id}", headers=headers)
+            if poll.status_code >= 400:
+                logger.error(f"D-ID poll failed: {poll.status_code}")
+                return None
+            body = poll.json()
+            status = body.get("status")
+            if status == "done":
+                return body.get("result_url")
+            if status == "error":
+                logger.error(f"D-ID talk errored: {body}")
+                return None
+    return None
+
+
+@api_router.post("/chat-with-avatar", response_model=ChatResponse)
+async def chat_with_avatar(payload: ChatRequest):
+    if not payload.message.strip():
+        raise HTTPException(status_code=400, detail="message cannot be empty")
+    if not EMERGENT_LLM_KEY:
+        raise HTTPException(status_code=500, detail="EMERGENT_LLM_KEY not configured")
+
+    session_id = payload.session_id or f"car-{payload.car_id}-{uuid.uuid4().hex[:8]}"
+
+    try:
+        text = await generate_llm_response(
+            payload.message, payload.car_name, payload.car_tagline or '', session_id
+        )
+    except Exception as e:
+        logger.exception("LLM call failed")
+        raise HTTPException(status_code=502, detail=f"LLM error: {str(e)[:120]}")
+
+    video_url = None
+    if payload.generate_video:
+        try:
+            did_url = await generate_did_talk(text)
+            if did_url:
+                # Download and cache locally so the frontend can stream same-origin
+                video_id = uuid.uuid4().hex
+                cache_path = VIDEO_CACHE_DIR / f"{video_id}.mp4"
+                async with httpx.AsyncClient(timeout=30.0) as dl:
+                    async with dl.stream("GET", did_url) as r:
+                        r.raise_for_status()
+                        with open(cache_path, 'wb') as f:
+                            async for chunk in r.aiter_bytes(chunk_size=65536):
+                                f.write(chunk)
+                video_url = f"/api/avatar-video/{video_id}.mp4"
+        except Exception as e:
+            logger.exception(f"D-ID call failed: {e}")
+            video_url = None
+
+    # Persist conversation
+    await db.chat_messages.insert_one({
+        "id": str(uuid.uuid4()),
+        "session_id": session_id,
+        "car_id": payload.car_id,
+        "car_name": payload.car_name,
+        "user_message": payload.message,
+        "ai_response": text,
+        "video_url": video_url,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+
+    return ChatResponse(text=text, video_url=video_url, session_id=session_id)
 
 # Include the router in the main app
 app.include_router(api_router)

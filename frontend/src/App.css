@@ -454,6 +454,149 @@ html, body, #root {
   font-variant-numeric: tabular-nums;
 }
 
+/* ────────── AVATAR RESPONSE (above chatbox, left-aligned) ────────── */
+.avatar-response {
+  width: 100%;
+  max-width: 36rem;
+  margin: 0 auto;
+  animation: fadeIn 0.4s ease-out;
+}
+
+.avatar-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
+.avatar-circle {
+  position: relative;
+  flex: 0 0 3.5rem;
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 9999px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.avatar-circle.is-speaking {
+  border-color: rgba(110, 231, 183, 0.7);
+  box-shadow: 0 0 0 4px rgba(110, 231, 183, 0.15);
+  animation: pulseGlow 1.6s ease-in-out infinite;
+}
+
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(110, 231, 183, 0.15); }
+  50%      { box-shadow: 0 0 0 8px rgba(110, 231, 183, 0.08); }
+}
+
+.avatar-img,
+.avatar-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.speaking-pulse {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 1.2rem;
+  height: 1.2rem;
+  border-radius: 9999px;
+  background: #6ee7b7;
+  color: #0a0a0c;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid rgba(20, 20, 22, 0.95);
+}
+
+.avatar-bubble {
+  flex: 1;
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 1.1rem;
+  border-bottom-left-radius: 0.25rem;
+  padding: 0.7rem 0.95rem 0.8rem;
+  color: #FFFFFF;
+}
+
+.avatar-name {
+  font-family: 'Outfit', sans-serif;
+  font-weight: 500;
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.95);
+  margin-bottom: 0.4rem;
+}
+
+.avatar-name-sep {
+  margin: 0 0.25rem;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.avatar-role {
+  font-weight: 300;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.avatar-text {
+  font-family: 'Outfit', sans-serif;
+  font-weight: 300;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: #FFFFFF;
+  letter-spacing: 0.005em;
+}
+
+/* Thinking dots */
+.thinking-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.4rem 0;
+}
+
+.thinking-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.7);
+  animation: bounceDot 1.2s ease-in-out infinite;
+}
+
+.thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+.thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes bounceDot {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30%           { transform: translateY(-4px); opacity: 1; }
+}
+
+.generating-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.75);
+  letter-spacing: 0.02em;
+  padding: 0.3rem 0;
+}
+
+.chatbox-input:disabled,
+.chatbox-send:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 /* ────────── TEST DRIVE CTA (top-right) ────────── */
 .test-drive-cta {
   position: absolute;
