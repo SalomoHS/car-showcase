@@ -3,81 +3,64 @@
 ## Original Problem Statement
 > build web app to showcase all angle from cars. just provide button front/back/right/left. so on startup showcase front. but when i click button back, it will animate from front to back. so the state now is back. when i click right. animate from back to right and so on. just use image sequence
 
-## Core Requirements (Static)
-- 4 angle buttons: Front / Right / Back / Left
-- Initial state shows Front view
-- Clicking a button animates from current state to target state (image sequence, no CSS rotation)
-- Shortest-path rotation (always animate the shorter way around the circle)
-- Smooth animation between angles
-- Clean minimal white background design
-
-## User Choices (Verbatim)
-- Car images: Use real consistent 360° spin from scaleflex CDN (36 frames)
-- Angles: 32+ angles requested → using 36 frames (10° avg per frame)
-- Animation: ~1.5s with ease-in-out cubic for cinematic feel
-- Design: Clean minimal white background
-- Features: Just basic angle buttons
+## Latest Problem Statement (2026-02-29)
+> Replace D-ID avatar with Agora and use Agora's Conversational AI. Add a toggle on the right side of the chatbox to switch between Conversation (voice) and Chat (text) modes. Chat mode = pure text + static Aria image. Voice mode = always-listening (auto VAD), user can deactivate/mute. TTS = Agora-managed MiniMax.
 
 ## Architecture
-- Frontend-only React app (no backend needed)
-- 36 preloaded car images from `https://scaleflex.airstore.io/demo/360-car/iris-{1..36}.jpeg`
-- Single-component implementation in `/app/frontend/src/components/CarShowcase.js`
-- Time-based rAF animation loop with ease-in-out cubic
-- True mathematical modulo for shortest-path calculation
+- **Frontend**: React 19 (CRA + craco). Lucide icons. CSS in `App.css`.
+- **Backend**: FastAPI (uvicorn). MongoDB for leads & chat history.
+- **3rd-party**:
+  - **Agora Conversational AI Engine** (voice) — preset `openai_gpt_4_1_mini,minimax_speech_2_8_turbo` (Agora-managed keys).
+  - **Emergent LLM (gpt-4.1-mini)** — text chat mode only.
+
+## Key Files
+- `frontend/src/components/CarShowcase.js` — main UI, owns mode state.
+- `frontend/src/components/AvatarResponse.js` — text bubble + static Aria image (no video).
+- `frontend/src/components/VoicePanel.js` — Agora RTC session + mic/hangup controls.
+- `backend/server.py` — `/api/chat-text`, `/api/agora/start`, `/api/agora/stop`, `/api/leads`, `/api/status`.
+
+## API Endpoints
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/api/chat-text` | Aria text response via Emergent LLM (gpt-4.1-mini). |
+| POST | `/api/agora/start` | Start Agora Conversational AI agent; returns `{app_id, channel, rtc_token, uid, agent_id, agent_uid}`. |
+| POST | `/api/agora/stop` | Stop the Agora agent (`/agents/{id}/leave`). |
+| POST/GET | `/api/leads` | Test-drive leads CRUD. |
+| POST/GET | `/api/status` | Health check. |
+
+## Env Vars (backend/.env)
+- `AGORA_APP_ID`, `AGORA_APP_CERTIFICATE` — RTC tokens.
+- `AGORA_CUSTOMER_ID`, `AGORA_CUSTOMER_SECRET` — REST Basic auth.
+- `EMERGENT_LLM_KEY` — text chat LLM.
+- `MONGO_URL`, `DB_NAME`, `CORS_ORIGINS`.
 
 ## What's Been Implemented
-### 2026-02-27 — MVP + Smoothness Upgrade
-- Initial 8-frame implementation (AI-generated) with linear lerp animation
-- **UPGRADE**: Switched to 36-frame real consistent car spin
-- **UPGRADE**: Time-based animation (1.5s, ease-in-out cubic) replacing per-frame lerp
-- **FIX**: Mathematical modulo for shortest-path (handles negatives correctly)
-- **FIX**: Mobile responsive overflow — buttons now fit on 390px viewports
-- Frame mapping: Front=1, Right=7 (pure side), Back=19, Left=25 (pure side)
-- Loading progress bar shown while 36 images preload
-- Frame indicator below buttons (e.g., "FRONT · 1/36")
-
-### 2026-02-27 — Drag-to-rotate (P1)
-- Added mouse + touch drag interaction on car image container
-- Sensitivity: 18px per frame; drag updates current frame in real-time
-- Dragging during an active animation cancels it cleanly
-- Active angle button highlights when drag lands within 1.5 frames of a named angle
-- "DRAG TO ROTATE" hint chip; grab/grabbing cursors; `touch-action: none` for mobile
-- Full 360° exploration now possible — not just 4 named stops
-
-## Backlog
-### 2026-02-28 — Full-screen redesign + multi-car selector
-- **Full-screen layout**: car image now covers entire viewport (object-fit: cover)
-- **Removed** Front/Right/Back/Left angle buttons (drag-to-rotate kept for AMG)
-- **Side arrows** (left/right) center vertically — quick prev/next car navigation
-- **Bottom dock**: "VIEW MORE CARS" pill + glass chatbox input
-- **Expandable menu** opens above the dock, showing all cars in a glass-morphism grid with thumbnail + brand + model
-- **5 cars in catalog**: Mercedes-AMG GT R (360°), Toyota Veloz, Ferrari LaFerrari, Chevrolet Camaro SS, Porsche 911 Carrera
-- Car meta overlay in top-left (brand + model + tagline); spin badge in top-right for AMG
-- Dark cinematic theme (#0a0a0c) replacing white background to showcase cars
-- Keyboard nav (←/→) + Escape closes menu
-- Chatbox is UI-only (input + send button; no LLM wired yet)
-
-### 2026-02-28 — Test Drive Lead Capture (CTA + Modal + Backend)
-- **Top-right CTA**: Prominent white "I want Test Drive" pill (with calendar icon) replaces the spin badge
-- **Spin hint** relocated to bottom-left as a subtle chip
-- **Modal**: Glass-morphism dark form with: full name, phone, location, "Detect automatically" button (browser geolocation + OpenStreetMap reverse-geocode), preferred date (optional)
-- **Success state**: Green check, personalized confirmation message echoing customer name, phone, car, and location
-- **Backend** `POST /api/leads` & `GET /api/leads` — leads stored in MongoDB `leads` collection with car_id, car_name, lat/lng (when detected), and timestamp
-- Esc/click-outside/X all close the modal; error states inline (red banner)
+### 2026-02-27 — MVP, 360° spin, drag-to-rotate, multi-car selector, test-drive lead capture.
+### 2026-02-28 — D-ID virtual assistant (Aria) with talking-head video (now removed).
+### 2026-02-29 — **Agora Conversational AI replaces D-ID**
+- Removed D-ID entirely (env, deps, `/api/chat-with-avatar`, video rendering).
+- Added text-only Aria response (`/api/chat-text`, Emergent LLM gpt-4.1-mini).
+- Added Agora Conversational AI integration:
+  - Backend `/api/agora/start` builds RTC token (agora-token-builder) and calls `https://api.agora.io/api/conversational-ai-agent/v2/projects/{appId}/join` with preset `openai_gpt_4_1_mini,minimax_speech_2_8_turbo` (Agora-managed).
+  - Backend `/api/agora/stop` calls `…/agents/{id}/leave`.
+  - Frontend `VoicePanel.js` uses `agora-rtc-sdk-ng` to join, publish mic (AEC/ANS/AGC), subscribe to agent audio; auto-VAD handled by Agora server.
+  - Mute/unmute and hangup controls.
+- **Mode toggle** (Chat / Voice) placed on the right side of the chatbox inside the form.
+- Aria circle now renders static image only (no `<video>` anywhere).
+- Tested: 9/10 backend pass (1 fail = EMERGENT_LLM_KEY budget hit, graceful 502 fallback), 12/12 frontend pass.
 
 ## Backlog
 ### P1
-- Wire chatbox to an LLM (Claude/GPT) — "Ask the car" Q&A about specs, features, pricing
-- Add 360° spin sequences for more cars (currently only AMG GT)
-- Allow user to switch between different car models
+- Live transcript of voice conversation in the UI (Agora data channel events).
+- Persist voice transcripts to MongoDB for later review.
+- Smarter "Aria is speaking" pulse — animate per-word, not just volume.
 
 ### P2
-- Add zoom on car image
-- Auto-rotate toggle button
-- Color/trim selection
-- Hotspots for features (engine, headlights, etc.)
+- 360° spin sequences for more cars.
+- Color/trim selection, zoom, auto-rotate toggle.
+- Multi-language Aria (switch ASR language + MiniMax voice).
 
 ## Tech Stack
-- React 19 (frontend only)
-- No backend usage (FastAPI/MongoDB present but unused)
-- Plain CSS for styling (Outfit + Syne Google Fonts)
+- React 19, Tailwind via shadcn (not heavily used here), `lucide-react`.
+- `agora-rtc-sdk-ng@4.24.4` (frontend), `agora-token-builder==1.0.0` (backend).
+- FastAPI, Motor (MongoDB), `httpx`, `emergentintegrations`.
