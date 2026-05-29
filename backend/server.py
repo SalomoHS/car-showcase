@@ -4,7 +4,8 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
-import asyncio
+import base64
+import time
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional
@@ -12,7 +13,7 @@ import uuid
 from datetime import datetime, timezone
 import httpx
 from emergentintegrations.llm.chat import LlmChat, UserMessage
-from fastapi.responses import FileResponse
+from agora_token_builder import RtcTokenBuilder
 
 
 ROOT_DIR = Path(__file__).parent
@@ -32,42 +33,37 @@ api_router = APIRouter(prefix="/api")
 
 # Define Models
 class StatusCheck(BaseModel):
-    model_config = ConfigDict(extra="ignore")  # Ignore MongoDB's _id field
-    
+    model_config = ConfigDict(extra="ignore")
+
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     client_name: str
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
+
 class StatusCheckCreate(BaseModel):
     client_name: str
 
-# Add your routes to the router instead of directly to app
+
 @api_router.get("/")
 async def root():
     return {"message": "Hello World"}
 
+
 @api_router.post("/status", response_model=StatusCheck)
 async def create_status_check(input: StatusCheckCreate):
-    status_dict = input.model_dump()
-    status_obj = StatusCheck(**status_dict)
-    
-    # Convert to dict and serialize datetime to ISO string for MongoDB
+    status_obj = StatusCheck(**input.model_dump())
     doc = status_obj.model_dump()
     doc['timestamp'] = doc['timestamp'].isoformat()
-    
-    _ = await db.status_checks.insert_one(doc)
+    await db.status_checks.insert_one(doc)
     return status_obj
+
 
 @api_router.get("/status", response_model=List[StatusCheck])
 async def get_status_checks():
-    # Exclude MongoDB's _id field from the query results
     status_checks = await db.status_checks.find({}, {"_id": 0}).to_list(1000)
-    
-    # Convert ISO string timestamps back to datetime objects
     for check in status_checks:
         if isinstance(check['timestamp'], str):
             check['timestamp'] = datetime.fromisoformat(check['timestamp'])
-    
     return status_checks
 
 
@@ -123,134 +119,56 @@ async def list_leads():
     return leads
 
 
-# ──────────────────── VIRTUAL SALES AVATAR (LLM + D-ID) ────────────────────
+# ──────────────────── ARIA — TEXT CHAT (Emergent LLM) ────────────────────
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY')
-DID_API_KEY = os.environ.get('DID_API_KEY')
-DID_PRESENTER_IMAGE = os.environ.get('DID_PRESENTER_IMAGE')
-DID_VOICE_ID = os.environ.get('DID_VOICE_ID', 'en-US-AriaNeural')
-DID_BASE = 'https://api.d-id.com'
 
-# Local cache for D-ID videos (proxied to avoid CORS issues with S3 signed URLs)
-VIDEO_CACHE_DIR = Path('/tmp/avatar_videos')
-VIDEO_CACHE_DIR.mkdir(exist_ok=True)
+ARIA_SYSTEM_PROMPT_TMPL = (
+    "You are Aria, a friendly and knowledgeable luxury car sales specialist. "
+    "The customer is currently viewing the {car_name} ({car_tagline}). "
+    "Answer their question in 2-3 short sentences with a warm, conversational tone. "
+    "Be specific about the car when relevant, and gently encourage interest without being pushy. "
+    "Never mention you are an AI; speak as Aria the sales specialist."
+)
 
 
-class ChatRequest(BaseModel):
+class ChatTextRequest(BaseModel):
     message: str
     car_id: str
     car_name: str
     car_tagline: Optional[str] = ''
     session_id: Optional[str] = None
-    generate_video: bool = True  # set False for text-only fast response
 
 
-class ChatResponse(BaseModel):
+class ChatTextResponse(BaseModel):
     text: str
-    video_url: Optional[str] = None
     session_id: str
 
 
-async def generate_llm_response(message: str, car_name: str, car_tagline: str, session_id: str) -> str:
-    system_prompt = (
-        f"You are Aria, a friendly and knowledgeable luxury car sales specialist. "
-        f"The customer is currently viewing the {car_name} ({car_tagline}). "
-        "Answer their question in 2-3 short sentences with a warm, conversational tone. "
-        "Be specific about the car when relevant, and gently encourage interest without being pushy. "
-        "Never mention you are an AI; speak as Aria the sales specialist. "
-        "Keep responses under 280 characters so the avatar video stays short."
-    )
-    chat = LlmChat(
-        api_key=EMERGENT_LLM_KEY,
-        session_id=session_id,
-        system_message=system_prompt,
-    ).with_model("openai", "gpt-4.1-mini")
-
-    response = await chat.send_message(UserMessage(text=message))
-    return response.strip()
-
-
-async def generate_did_talk(text: str) -> Optional[str]:
-    """Create a D-ID talk and poll until done. Returns the MP4 result_url, or None on failure."""
-    if not DID_API_KEY or not DID_PRESENTER_IMAGE:
-        return None
-
-    headers = {
-        "Authorization": f"Basic {DID_API_KEY}",
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "source_url": DID_PRESENTER_IMAGE,
-        "script": {
-            "type": "text",
-            "input": text,
-            "provider": {"type": "microsoft", "voice_id": DID_VOICE_ID},
-        },
-    }
-
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        create = await client.post(f"{DID_BASE}/talks", json=payload, headers=headers)
-        if create.status_code >= 400:
-            logger.error(f"D-ID create failed: {create.status_code} {create.text}")
-            return None
-        talk_id = create.json().get("id")
-        if not talk_id:
-            return None
-
-        # Poll up to 30s
-        for _ in range(15):
-            await asyncio.sleep(2)
-            poll = await client.get(f"{DID_BASE}/talks/{talk_id}", headers=headers)
-            if poll.status_code >= 400:
-                logger.error(f"D-ID poll failed: {poll.status_code}")
-                return None
-            body = poll.json()
-            status = body.get("status")
-            if status == "done":
-                return body.get("result_url")
-            if status == "error":
-                logger.error(f"D-ID talk errored: {body}")
-                return None
-    return None
-
-
-@api_router.post("/chat-with-avatar", response_model=ChatResponse)
-async def chat_with_avatar(payload: ChatRequest):
+@api_router.post("/chat-text", response_model=ChatTextResponse)
+async def chat_text(payload: ChatTextRequest):
     if not payload.message.strip():
         raise HTTPException(status_code=400, detail="message cannot be empty")
     if not EMERGENT_LLM_KEY:
         raise HTTPException(status_code=500, detail="EMERGENT_LLM_KEY not configured")
 
     session_id = payload.session_id or f"car-{payload.car_id}-{uuid.uuid4().hex[:8]}"
+    system_prompt = ARIA_SYSTEM_PROMPT_TMPL.format(
+        car_name=payload.car_name,
+        car_tagline=payload.car_tagline or '',
+    )
 
     try:
-        text = await generate_llm_response(
-            payload.message, payload.car_name, payload.car_tagline or '', session_id
-        )
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=session_id,
+            system_message=system_prompt,
+        ).with_model("openai", "gpt-4.1-mini")
+        response = await chat.send_message(UserMessage(text=payload.message))
+        text = response.strip()
     except Exception as e:
         logger.exception("LLM call failed")
-        raise HTTPException(status_code=502, detail=f"LLM error: {str(e)[:120]}")
+        raise HTTPException(status_code=502, detail=f"LLM error: {str(e)[:160]}")
 
-    video_url = None
-    if payload.generate_video:
-        try:
-            did_url = await generate_did_talk(text)
-            if did_url:
-                # Download and cache locally so the frontend can stream same-origin
-                video_id = uuid.uuid4().hex
-                cache_path = VIDEO_CACHE_DIR / f"{video_id}.mp4"
-                async with httpx.AsyncClient(timeout=30.0) as dl:
-                    async with dl.stream("GET", did_url) as r:
-                        r.raise_for_status()
-                        with open(cache_path, 'wb') as f:
-                            async for chunk in r.aiter_bytes(chunk_size=65536):
-                                f.write(chunk)
-                video_url = f"/api/avatar-video/{video_id}.mp4"
-        except Exception as e:
-            logger.exception(f"D-ID call failed: {e}")
-            video_url = None
-
-    # Persist conversation
     await db.chat_messages.insert_one({
         "id": str(uuid.uuid4()),
         "session_id": session_id,
@@ -258,11 +176,170 @@ async def chat_with_avatar(payload: ChatRequest):
         "car_name": payload.car_name,
         "user_message": payload.message,
         "ai_response": text,
-        "video_url": video_url,
+        "mode": "text",
         "created_at": datetime.now(timezone.utc).isoformat(),
     })
 
-    return ChatResponse(text=text, video_url=video_url, session_id=session_id)
+    return ChatTextResponse(text=text, session_id=session_id)
+
+
+# ──────────────────── ARIA — VOICE CHAT (Agora Conversational AI) ────────────────────
+AGORA_APP_ID = os.environ.get('AGORA_APP_ID')
+AGORA_APP_CERTIFICATE = os.environ.get('AGORA_APP_CERTIFICATE')
+AGORA_CUSTOMER_ID = os.environ.get('AGORA_CUSTOMER_ID')
+AGORA_CUSTOMER_SECRET = os.environ.get('AGORA_CUSTOMER_SECRET')
+AGORA_API_BASE = "https://api.agora.io/api/conversational-ai-agent/v2/projects"
+
+# RTC token role / privilege constants
+ROLE_PUBLISHER = 1
+TOKEN_EXPIRE_SECONDS = 60 * 60  # 1 hour
+
+
+def _agora_basic_auth_header() -> str:
+    raw = f"{AGORA_CUSTOMER_ID}:{AGORA_CUSTOMER_SECRET}".encode("utf-8")
+    return "Basic " + base64.b64encode(raw).decode("utf-8")
+
+
+def _build_rtc_token(channel: str, uid: int, expire_seconds: int = TOKEN_EXPIRE_SECONDS) -> str:
+    expire_ts = int(time.time()) + expire_seconds
+    return RtcTokenBuilder.buildTokenWithUid(
+        AGORA_APP_ID, AGORA_APP_CERTIFICATE, channel, uid, ROLE_PUBLISHER, expire_ts
+    )
+
+
+class AgoraStartRequest(BaseModel):
+    car_id: str
+    car_name: str
+    car_tagline: Optional[str] = ''
+
+
+class AgoraStartResponse(BaseModel):
+    app_id: str
+    channel: str
+    rtc_token: str
+    uid: int
+    agent_id: str
+    agent_uid: int
+
+
+class AgoraStopRequest(BaseModel):
+    agent_id: str
+
+
+@api_router.post("/agora/start", response_model=AgoraStartResponse)
+async def agora_start(payload: AgoraStartRequest):
+    if not (AGORA_APP_ID and AGORA_APP_CERTIFICATE and AGORA_CUSTOMER_ID and AGORA_CUSTOMER_SECRET):
+        raise HTTPException(status_code=500, detail="Agora credentials not configured")
+
+    # Build unique channel + uids
+    suffix = uuid.uuid4().hex[:8]
+    channel = f"aria-{payload.car_id}-{suffix}"
+    user_uid = int.from_bytes(uuid.uuid4().bytes[:3], "big") + 1000  # 24-bit safe random
+    agent_uid = user_uid + 1
+
+    # Tokens
+    user_token = _build_rtc_token(channel, user_uid)
+    agent_token = _build_rtc_token(channel, agent_uid)
+
+    system_prompt = ARIA_SYSTEM_PROMPT_TMPL.format(
+        car_name=payload.car_name,
+        car_tagline=payload.car_tagline or '',
+    ) + " Keep replies under 50 words because they will be spoken aloud."
+
+    greeting = (
+        f"Hi! I'm Aria. I see you're checking out the {payload.car_name}. "
+        "Ask me anything about it."
+    )
+
+    agent_name = f"aria-{payload.car_id}-{suffix}"
+
+    body = {
+        "name": agent_name,
+        "preset": "openai_gpt_4_1_mini,minimax_speech_2_8_turbo",
+        "properties": {
+            "channel": channel,
+            "token": agent_token,
+            "agent_rtc_uid": str(agent_uid),
+            "remote_rtc_uids": [str(user_uid)],
+            "idle_timeout": 120,
+            "asr": {"language": "en-US"},
+            "llm": {
+                "system_messages": [
+                    {"role": "system", "content": system_prompt}
+                ],
+                "greeting_message": greeting,
+                "failure_message": "Sorry, one moment while I reconnect.",
+                "max_history": 16,
+            },
+            "tts": {
+                "params": {
+                    "voice_setting": {
+                        "voice_id": "English_captivating_female1"
+                    }
+                }
+            },
+        },
+    }
+
+    url = f"{AGORA_API_BASE}/{AGORA_APP_ID}/join"
+    headers = {
+        "Authorization": _agora_basic_auth_header(),
+        "Content-Type": "application/json",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as hc:
+            resp = await hc.post(url, json=body, headers=headers)
+    except httpx.HTTPError as e:
+        logger.exception("Agora request error")
+        raise HTTPException(status_code=502, detail=f"Agora request error: {e}")
+
+    if resp.status_code >= 400:
+        logger.error(f"Agora join failed: {resp.status_code} {resp.text}")
+        raise HTTPException(
+            status_code=502,
+            detail=f"Agora join failed ({resp.status_code}): {resp.text[:240]}",
+        )
+
+    data = resp.json()
+    agent_id = data.get("agent_id")
+    if not agent_id:
+        raise HTTPException(status_code=502, detail=f"Agora returned no agent_id: {data}")
+
+    return AgoraStartResponse(
+        app_id=AGORA_APP_ID,
+        channel=channel,
+        rtc_token=user_token,
+        uid=user_uid,
+        agent_id=agent_id,
+        agent_uid=agent_uid,
+    )
+
+
+@api_router.post("/agora/stop")
+async def agora_stop(payload: AgoraStopRequest):
+    if not payload.agent_id:
+        raise HTTPException(status_code=400, detail="agent_id is required")
+
+    url = f"{AGORA_API_BASE}/{AGORA_APP_ID}/agents/{payload.agent_id}/leave"
+    headers = {
+        "Authorization": _agora_basic_auth_header(),
+        "Content-Type": "application/json",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as hc:
+            resp = await hc.post(url, headers=headers)
+    except httpx.HTTPError as e:
+        logger.exception("Agora stop request error")
+        raise HTTPException(status_code=502, detail=f"Agora stop error: {e}")
+
+    if resp.status_code >= 400:
+        logger.warning(f"Agora stop returned {resp.status_code}: {resp.text}")
+        # Still return success so frontend can clean up; agent will idle-timeout anyway.
+        return {"ok": False, "status": resp.status_code, "detail": resp.text[:240]}
+
+    return {"ok": True}
+
 
 # Include the router in the main app
 app.include_router(api_router)
@@ -281,6 +358,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

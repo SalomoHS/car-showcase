@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import { ChevronLeft, ChevronRight, ChevronUp, Send, RotateCw, Calendar } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronUp, Send, RotateCw, Calendar, MessageSquare, Mic } from 'lucide-react';
 import axios from 'axios';
 import TestDriveModal from './TestDriveModal';
 import AvatarResponse from './AvatarResponse';
+import VoicePanel from './VoicePanel';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -93,11 +94,13 @@ const CarShowcase = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [testDriveOpen, setTestDriveOpen] = useState(false);
 
-  // Aria avatar chat state
-  const [avatarStatus, setAvatarStatus] = useState('idle'); // idle | thinking | generating | speaking
+  // Aria chat state (text mode)
+  const [avatarStatus, setAvatarStatus] = useState('idle'); // idle | thinking
   const [avatarText, setAvatarText] = useState('');
-  const [avatarVideoUrl, setAvatarVideoUrl] = useState(null);
   const [chatSessionId, setChatSessionId] = useState(null);
+
+  // Mode: 'chat' (text) | 'voice' (Agora Conversational AI)
+  const [mode, setMode] = useState('chat');
 
   const currentFrameRef = useRef(0);
   const dragRef = useRef({ isDragging: false, startX: 0, startFrame: 0 });
@@ -132,9 +135,10 @@ const CarShowcase = () => {
     currentFrameRef.current = 0;
     // Reset avatar conversation when switching cars
     setAvatarText('');
-    setAvatarVideoUrl(null);
     setAvatarStatus('idle');
     setChatSessionId(null);
+    // Also drop out of voice mode so a fresh session is created for the new car
+    setMode('chat');
   }, [selectedCarId]);
 
   // ──────────────── Car switching ────────────────
@@ -209,31 +213,27 @@ const CarShowcase = () => {
   const handleChatSubmit = async (e) => {
     e.preventDefault();
     const msg = chatValue.trim();
-    if (!msg || avatarStatus === 'thinking' || avatarStatus === 'generating') return;
+    if (!msg || avatarStatus === 'thinking') return;
 
     setChatValue('');
     setAvatarStatus('thinking');
     setAvatarText('');
-    setAvatarVideoUrl(null);
 
     try {
-      const { data } = await axios.post(`${API}/chat-with-avatar`, {
+      const { data } = await axios.post(`${API}/chat-text`, {
         message: msg,
         car_id: selectedCar.id,
         car_name: `${selectedCar.brand} ${selectedCar.model}`,
         car_tagline: selectedCar.tagline || '',
         session_id: chatSessionId,
-        generate_video: true,
       }, { timeout: 60000 });
 
       setAvatarText(data.text || '');
-      setAvatarVideoUrl(data.video_url || null);
       setChatSessionId(data.session_id || null);
-      setAvatarStatus(data.video_url ? 'speaking' : 'idle');
+      setAvatarStatus('idle');
     } catch (err) {
       console.error('Chat failed', err);
       setAvatarText("Sorry, I couldn't reach the showroom server. Please try again.");
-      setAvatarVideoUrl(null);
       setAvatarStatus('idle');
     }
   };
@@ -358,13 +358,21 @@ const CarShowcase = () => {
           </div>
         </div>
 
-        {/* Aria avatar response (sits above the view-more button) */}
-        <AvatarResponse
-          status={avatarStatus}
-          text={avatarText}
-          videoUrl={avatarVideoUrl}
-          onVideoEnded={() => setAvatarStatus('idle')}
-        />
+        {/* Aria response — text mode only */}
+        {mode === 'chat' && (
+          <AvatarResponse
+            status={avatarStatus}
+            text={avatarText}
+          />
+        )}
+
+        {/* Voice conversation panel — only when in voice mode */}
+        {mode === 'voice' && (
+          <VoicePanel
+            car={selectedCar}
+            onClose={() => setMode('chat')}
+          />
+        )}
 
         {/* View more cars button */}
         <button
@@ -380,7 +388,7 @@ const CarShowcase = () => {
           />
         </button>
 
-        {/* Chatbox */}
+        {/* Chatbox (input + send + mode toggle on the right) */}
         <form
           className="chatbox"
           onSubmit={handleChatSubmit}
@@ -391,23 +399,50 @@ const CarShowcase = () => {
             value={chatValue}
             onChange={(e) => setChatValue(e.target.value)}
             placeholder={
-              avatarStatus === 'thinking' || avatarStatus === 'generating'
+              mode === 'voice'
+                ? 'Voice mode active — just talk to Aria'
+                : avatarStatus === 'thinking'
                 ? 'Aria is preparing your answer…'
                 : `Ask Aria about the ${selectedCar.brand} ${selectedCar.model}…`
             }
             className="chatbox-input"
             data-testid="chatbox-input"
-            disabled={avatarStatus === 'thinking' || avatarStatus === 'generating'}
+            disabled={mode === 'voice' || avatarStatus === 'thinking'}
           />
           <button
             type="submit"
             className="chatbox-send"
             data-testid="chatbox-send"
             aria-label="Send"
-            disabled={!chatValue.trim() || avatarStatus === 'thinking' || avatarStatus === 'generating'}
+            disabled={mode === 'voice' || !chatValue.trim() || avatarStatus === 'thinking'}
           >
             <Send size={16} strokeWidth={1.8} />
           </button>
+          {/* Mode toggle — right side of the chatbox */}
+          <div className="mode-toggle" data-testid="mode-toggle" role="group" aria-label="Conversation mode">
+            <button
+              type="button"
+              className={`mode-toggle-btn ${mode === 'chat' ? 'active' : ''}`}
+              onClick={() => setMode('chat')}
+              data-testid="mode-toggle-chat"
+              aria-pressed={mode === 'chat'}
+              title="Text chat mode"
+            >
+              <MessageSquare size={14} strokeWidth={2} />
+              <span>Chat</span>
+            </button>
+            <button
+              type="button"
+              className={`mode-toggle-btn ${mode === 'voice' ? 'active' : ''}`}
+              onClick={() => setMode('voice')}
+              data-testid="mode-toggle-voice"
+              aria-pressed={mode === 'voice'}
+              title="Voice conversation with Aria"
+            >
+              <Mic size={14} strokeWidth={2} />
+              <span>Voice</span>
+            </button>
+          </div>
         </form>
       </div>
 
