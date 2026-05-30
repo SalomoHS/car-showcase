@@ -37,7 +37,14 @@
 ## What's Been Implemented
 ### 2026-02-27 — MVP, 360° spin, drag-to-rotate, multi-car selector, test-drive lead capture.
 ### 2026-02-28 — D-ID virtual assistant (Aria) with talking-head video (now removed).
-### 2026-02-29 — **Agora Conversational AI replaces D-ID**
+### 2026-02-29 (later) — Catalog refresh: 3 Mitsubishi cars from manufacturer videos
+- Replaced all 5 prior cars (AMG GT R, Veloz, LaFerrari, Camaro, 911) with **3 spinnable Mitsubishi models**:
+  - **Mitsubishi Destinator** (60 frames, default car)
+  - **Mitsubishi XForce** (60 frames)
+  - **Mitsubishi Pajero Sport** (60 frames)
+- Frames extracted locally via `ffmpeg` from user-provided MP4 turntable videos to `/app/frontend/public/cars/{id}/frame_NN.jpg` (1280×720, JPEG q=3). **No image-gen cost.**
+- Generalized preloading from a single AMG-only loader to a per-car loader keyed by `selectedCarId`.
+- Bumped `TOTAL_FRAMES` 36 → 60 and tuned `DRAG_PIXELS_PER_FRAME` for smooth spin feel.
 - Removed D-ID entirely (env, deps, `/api/chat-with-avatar`, video rendering).
 - Added text-only Aria response (`/api/chat-text`, Emergent LLM gpt-4.1-mini).
 - Added Agora Conversational AI integration:

@@ -8,79 +8,50 @@ import VoicePanel from './VoicePanel';
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 // ──────────────────── DATA ────────────────────
-const AMG_FRAMES = Array.from({ length: 36 }, (_, i) =>
-  `https://scaleflex.airstore.io/demo/360-car/iris-${i + 1}.jpeg`
-);
+// 60-frame turntable sequences extracted via ffmpeg from manufacturer videos.
+// Frames live in /public/cars/{carId}/frame_01.jpg … frame_60.jpg
+const buildFrames = (carId) =>
+  Array.from({ length: 60 }, (_, i) =>
+    `/cars/${carId}/frame_${String(i + 1).padStart(2, '0')}.jpg`
+  );
 
 const CARS = [
   {
-    id: 'amg-gt',
-    brand: 'Mercedes-AMG',
-    model: 'GT R',
-    tagline: '577 HP · V8 Biturbo · 0–100 in 3.6s',
-    thumbnail: AMG_FRAMES[0],
-    frames: AMG_FRAMES,
+    id: 'destinator',
+    brand: 'Mitsubishi',
+    model: 'Destinator',
+    tagline: 'Bold Compact SUV · 1.5L MIVEC Turbo',
+    frames: buildFrames('destinator'),
     spinEnabled: true,
     bgTone: 'showroom',
   },
   {
-    id: 'veloz',
-    brand: 'Toyota',
-    model: 'Veloz',
-    tagline: '1.5L · 7-Seater MPV',
-    thumbnail:
-      'https://customer-assets.emergentagent.com/job_car-rotation-demo/artifacts/0nb9w6rz_veloz.png',
-    frames: [
-      'https://customer-assets.emergentagent.com/job_car-rotation-demo/artifacts/0nb9w6rz_veloz.png',
-    ],
-    spinEnabled: false,
-    bgTone: 'black',
+    id: 'xforce',
+    brand: 'Mitsubishi',
+    model: 'XForce',
+    tagline: 'Adventurous Coupé SUV · 1.5L MIVEC',
+    frames: buildFrames('xforce'),
+    spinEnabled: true,
+    bgTone: 'showroom',
   },
   {
-    id: 'laferrari',
-    brand: 'Ferrari',
-    model: 'LaFerrari',
-    tagline: '950 HP · Hybrid V12',
-    thumbnail:
-      'https://images.unsplash.com/photo-1583121274602-3e2820c69888?w=1920&q=80',
-    frames: [
-      'https://images.unsplash.com/photo-1583121274602-3e2820c69888?w=1920&q=80',
-    ],
-    spinEnabled: false,
-    bgTone: 'dark',
-  },
-  {
-    id: 'camaro',
-    brand: 'Chevrolet',
-    model: 'Camaro SS',
-    tagline: '455 HP · 6.2L V8',
-    thumbnail:
-      'https://images.unsplash.com/photo-1552519507-da3b142c6e3d?w=1920&q=80',
-    frames: [
-      'https://images.unsplash.com/photo-1552519507-da3b142c6e3d?w=1920&q=80',
-    ],
-    spinEnabled: false,
-    bgTone: 'dark',
-  },
-  {
-    id: 'porsche-911',
-    brand: 'Porsche',
-    model: '911 Carrera',
-    tagline: '379 HP · Flat-6 Twin-Turbo',
-    thumbnail:
-      'https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=1920&q=80',
-    frames: [
-      'https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=1920&q=80',
-    ],
-    spinEnabled: false,
-    bgTone: 'dark',
+    id: 'pajero',
+    brand: 'Mitsubishi',
+    model: 'Pajero Sport',
+    tagline: 'Legendary 4WD · 2.4L MIVEC Turbo Diesel',
+    frames: buildFrames('pajero'),
+    spinEnabled: true,
+    bgTone: 'showroom',
   },
 ];
 
+// Add thumbnail (1st frame) after construction
+CARS.forEach((c) => { c.thumbnail = c.frames[0]; });
+
 // ──────────────────── ANIMATION CONSTANTS ────────────────────
-const TOTAL_FRAMES = 36;
+const TOTAL_FRAMES = 60;
 const HALF = TOTAL_FRAMES / 2;
-const DRAG_PIXELS_PER_FRAME = 18;
+const DRAG_PIXELS_PER_FRAME = 11;
 const mod = (n, m) => ((n % m) + m) % m;
 
 // ──────────────────── COMPONENT ────────────────────
@@ -89,7 +60,8 @@ const CarShowcase = () => {
   const [imageIndex, setImageIndex] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [chatValue, setChatValue] = useState('');
-  const [amgLoaded, setAmgLoaded] = useState(false);
+  // Per-car preload state — key: carId, value: progress 0..1
+  const [loadedCars, setLoadedCars] = useState({}); // { [id]: true }
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [testDriveOpen, setTestDriveOpen] = useState(false);
@@ -108,26 +80,36 @@ const CarShowcase = () => {
   const selectedCar = CARS.find((c) => c.id === selectedCarId);
   const currentIdx = CARS.findIndex((c) => c.id === selectedCarId);
 
-  // Preload AMG 360 frames once
+  // Preload current car's 360 frames whenever the selection changes (idempotent)
   useEffect(() => {
+    if (!selectedCar?.spinEnabled) return;
+    if (loadedCars[selectedCar.id]) {
+      setLoadingProgress(100);
+      return;
+    }
+    setLoadingProgress(0);
     let count = 0;
-    const images = AMG_FRAMES.map((url) => {
+    let cancelled = false;
+    const images = selectedCar.frames.map((url) => {
       const img = new Image();
       img.src = url;
-      img.onload = () => {
+      const onDone = () => {
+        if (cancelled) return;
         count += 1;
         setLoadingProgress(Math.round((count / TOTAL_FRAMES) * 100));
-        if (count === TOTAL_FRAMES) setAmgLoaded(true);
+        if (count === TOTAL_FRAMES) {
+          setLoadedCars((prev) => ({ ...prev, [selectedCar.id]: true }));
+        }
       };
-      img.onerror = () => {
-        count += 1;
-        setLoadingProgress(Math.round((count / TOTAL_FRAMES) * 100));
-        if (count === TOTAL_FRAMES) setAmgLoaded(true);
-      };
+      img.onload = onDone;
+      img.onerror = onDone;
       return img;
     });
-    return () => images.forEach((img) => { img.onload = null; img.onerror = null; });
-  }, []);
+    return () => {
+      cancelled = true;
+      images.forEach((img) => { img.onload = null; img.onerror = null; });
+    };
+  }, [selectedCarId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reset frame state when car changes
   useEffect(() => {
@@ -238,8 +220,8 @@ const CarShowcase = () => {
     }
   };
 
-  // Loading screen only blocks if AMG is current and not yet loaded
-  const showLoading = selectedCar.spinEnabled && !amgLoaded;
+  // Loading screen blocks only while the currently selected spin car is still preloading
+  const showLoading = selectedCar.spinEnabled && !loadedCars[selectedCar.id];
   const currentImg = selectedCar.frames[imageIndex] || selectedCar.frames[0];
 
   return (
