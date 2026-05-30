@@ -33,13 +33,23 @@ html, body, #root {
 .car-stage.draggable { cursor: grab; }
 .car-stage.dragging  { cursor: grabbing; }
 
-.car-image {
+.car-image-stack {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  animation: fadeIn 0.5s ease-out;
+}
+
+.car-image-layer {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
   user-select: none;
   -webkit-user-drag: none;
-  animation: fadeIn 0.5s ease-out;
+  pointer-events: none;
 }
 
 @keyframes fadeIn {

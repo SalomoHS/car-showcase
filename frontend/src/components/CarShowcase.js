@@ -243,14 +243,19 @@ const CarShowcase = () => {
             <div className="loading-percent">{loadingProgress}%</div>
           </div>
         ) : (
-          <img
-            key={selectedCar.id + '-' + imageIndex}
-            src={currentImg}
-            alt={`${selectedCar.brand} ${selectedCar.model}`}
-            className="car-image"
-            data-testid="car-image"
-            draggable={false}
-          />
+          <div className="car-image-stack" data-testid="car-image">
+            {selectedCar.frames.map((src, i) => (
+              <img
+                key={src}
+                src={src}
+                alt={i === imageIndex ? `${selectedCar.brand} ${selectedCar.model}` : ''}
+                className="car-image-layer"
+                style={{ display: i === imageIndex ? 'block' : 'none' }}
+                draggable={false}
+                decoding="sync"
+              />
+            ))}
+          </div>
         )}
       </div>
 
