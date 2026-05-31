@@ -48,9 +48,9 @@ const VoicePanel = ({ car, sessionId, onSessionId, onAngleHint, onClose }) => {
         // Only react to fresh voice turns we haven't already processed.
         if (!data.ts || data.ts === lastAngleTsRef.current) return;
         lastAngleTsRef.current = data.ts;
-        if (data.angle && angleHintRef.current) {
-          angleHintRef.current(data.angle);
-        }
+        // Forward both positive (frontseat/backseat/trunk) and null hints — parent
+        // decides whether to open, switch, or auto-close.
+        if (angleHintRef.current) angleHintRef.current(data.angle);
       } catch (_) {
         // Network blips are fine; we just retry on the next tick.
       }

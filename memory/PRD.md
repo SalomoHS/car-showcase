@@ -75,6 +75,14 @@
 - **P2** — Optional `chat.completion.custom_metadata` first chunk from the proxy with `interruptable: false` for filler phrases, smoother voice UX.
 - **P3** — Switch keyword-based RAG classifier to an LLM classifier once the custom endpoint exposes a non-thinking model (e.g., a small/fast variant). Current keyword classifier in `backend/rag/classifier.py` is deterministic and zero-cost; LLM fallback stub is kept ready.
 
+## Recent Implementation (2026-05-31, batch 7)
+- **Auto-close angle viewer** — Tracks whether the active angle was opened by `'user'` (button) or `'ai'` (chat/voice reply). Three close paths now:
+  1. **User clicks the back arrow** → always closes.
+  2. **AI's next reply has `angle:null`** while an AI-opened angle is showing → reverses out to 360°.
+  3. **8s idle timer** while an AI-opened angle is showing with no new replies → auto-closes.
+  User-clicked angles are never auto-closed. The 8s timer also re-arms on every new AI reply that targets the same or different angle.
+  Critical detail: handlers read `activeAngleRef.current` (not closure-captured state) so deferred callbacks (idle timer, voice poll) always see the current value.
+
 ## Recent Implementation (2026-05-31, batch 6)
 - **Auto-angle from AI response** — System prompt now requires Aria to start every reply with `[[angle:frontseat|backseat|trunk|none]]`. `/api/chat-text` parses it, returns `angle` in the response, frontend `handleChatSubmit` auto-triggers `handleAngleClick(angle)`. The LLM proxy buffers the first ~32 chars to detect & strip the sentinel **before** streaming to Agora's TTS (so it's never spoken aloud), persists `angle` on the DynamoDB row. `VoicePanel` polls `/api/chat-session/{sid}/pending-angle` every 1.5s while live; on a new voice-turn ts with an angle, fires `onAngleHint(angle)` → triggers `handleAngleClick`.
 - **RAG via AWS S3 Vectors + Gemini embeddings** — New `backend/rag/retrieve.py` module wraps the user-supplied retrieval code (`google-generativeai` for embeddings, `boto3.s3vectors` for `query_vectors`, S3 for payload bodies). Async wrapper via `asyncio.to_thread`. Default bucket `virtual-dealer-prod`, index `cars-index`, payload bucket `virtual-dealer-cars-rag-prod`, dim=3072.

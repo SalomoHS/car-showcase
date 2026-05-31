@@ -329,11 +329,21 @@ const CarShowcase = () => {
     });
   }, [animateToFrame, selectedCar, preloadAngleSequence, playSequenceForward]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Public: handle "Frontseat" / "Backseat" / "Trunk" button click
-  const handleAngleClick = (angle) => {
+  // Public: handle "Frontseat" / "Backseat" / "Trunk" button click.
+  // `source` is 'user' for direct clicks, 'ai' when triggered by an AI reply.
+  // Only 'ai'-opened angles auto-close after 8s of silence or on a follow-up
+  // reply that explicitly carries angle:null.
+  const handleAngleClick = (angle, source = 'user') => {
     if (showLoading) return;
-    if (activeAngle === angle && (angleState === 'at_angle' || angleState === 'playing_video')) return;
-    if (!activeAngle) { enterAngle(angle); return; }
+    angleOpenedByRef.current = source;
+    const cur = activeAngleRef.current;
+    if (cur === angle && (angleState === 'at_angle' || angleState === 'playing_video')) {
+      // Re-arm idle timer even on a redundant trigger so the angle stays visible.
+      if (source === 'ai') armAiIdleTimer();
+      return;
+    }
+    if (source === 'ai') armAiIdleTimer(); else cancelAiIdleTimer();
+    if (!cur) { enterAngle(angle); return; }
     // Reverse current angle's sequence first, then enter the new angle.
     setAngleState('reversing_video');
     reverseSequenceToStart(() => {
@@ -341,9 +351,13 @@ const CarShowcase = () => {
     });
   };
 
-  // Public: close the angle viewer and return to 360° (staying at start frame)
+  // Public: close the angle viewer and return to 360° (staying at start frame).
+  // Uses `activeAngleRef.current` (not the closure-captured state) so callbacks
+  // armed earlier (e.g., the 8s idle timer) see the latest value.
   const handleAngleClose = () => {
-    if (!activeAngle) return;
+    cancelAiIdleTimer();
+    angleOpenedByRef.current = null;
+    if (!activeAngleRef.current) return;
     setAngleState('reversing_video');
     reverseSequenceToStart(() => {
       setActiveAngle(null);
@@ -353,12 +367,56 @@ const CarShowcase = () => {
     });
   };
 
+  // ───── AI-driven auto-close ─────
+  // Tracks who opened the current angle ('user' click vs 'ai' reply). Only
+  // AI-opened angles are subject to auto-close behavior so manual button
+  // presses are never closed under the user's feet.
+  const angleOpenedByRef = useRef(null);
+  const aiIdleTimerRef = useRef(null);
+  const AI_IDLE_CLOSE_MS = 8000;
+  // Refs to give the timer closure access to the latest values without re-running.
+  const activeAngleRef = useRef(null);
+  useEffect(() => { activeAngleRef.current = activeAngle; }, [activeAngle]);
+
+  const cancelAiIdleTimer = () => {
+    if (aiIdleTimerRef.current) {
+      clearTimeout(aiIdleTimerRef.current);
+      aiIdleTimerRef.current = null;
+    }
+  };
+  const armAiIdleTimer = () => {
+    cancelAiIdleTimer();
+    aiIdleTimerRef.current = setTimeout(() => {
+      aiIdleTimerRef.current = null;
+      // Auto-close only if the angle was opened by AI and is still visible.
+      if (angleOpenedByRef.current === 'ai' && activeAngleRef.current) {
+        handleAngleClose();
+      }
+    }, AI_IDLE_CLOSE_MS);
+  };
+
+  // Public: route called by chat/voice when a fresh AI turn reports its angle.
+  // - non-null angle → switch (or re-arm idle timer)
+  // - null angle while AI-opened → reverse out to 360°
+  // - null angle while user-opened → leave it alone
+  const handleAiAngleHint = (angle) => {
+    if (angle === 'frontseat' || angle === 'backseat' || angle === 'trunk') {
+      handleAngleClick(angle, 'ai');
+      return;
+    }
+    // angle is null / 'none' / unknown — only auto-close if we ourselves opened it.
+    if (activeAngleRef.current && angleOpenedByRef.current === 'ai') {
+      handleAngleClose();
+    }
+  };
+
   // Cleanup animation handles when car changes or unmounts
   useEffect(() => {
     return () => {
       if (transitionAnimRef.current) cancelAnimationFrame(transitionAnimRef.current);
       if (playAnimRef.current) cancelAnimationFrame(playAnimRef.current);
       if (reverseAnimRef.current) cancelAnimationFrame(reverseAnimRef.current);
+      if (aiIdleTimerRef.current) clearTimeout(aiIdleTimerRef.current);
     };
   }, []);
 
@@ -367,6 +425,8 @@ const CarShowcase = () => {
     if (transitionAnimRef.current) cancelAnimationFrame(transitionAnimRef.current);
     if (playAnimRef.current) cancelAnimationFrame(playAnimRef.current);
     if (reverseAnimRef.current) cancelAnimationFrame(reverseAnimRef.current);
+    if (aiIdleTimerRef.current) { clearTimeout(aiIdleTimerRef.current); aiIdleTimerRef.current = null; }
+    angleOpenedByRef.current = null;
     setActiveAngle(null);
     setAngleState(null);
     setAngleFrameIdx(0);
@@ -458,11 +518,8 @@ const CarShowcase = () => {
       setAvatarText(data.text || '');
       setChatSessionId(data.session_id || null);
       setAvatarStatus('idle');
-      // Auto-trigger angle viewer when Aria's reply maps to a specific car angle.
-      const newAngle = data.angle;
-      if (newAngle === 'frontseat' || newAngle === 'backseat' || newAngle === 'trunk') {
-        handleAngleClick(newAngle);
-      }
+      // Auto-trigger / auto-close angle viewer based on Aria's reply.
+      handleAiAngleHint(data.angle);
     } catch (err) {
       console.error('Chat failed', err);
       setAvatarText("Sorry, I couldn't reach the showroom server. Please try again.");
@@ -676,11 +733,7 @@ const CarShowcase = () => {
             car={selectedCar}
             sessionId={chatSessionId}
             onSessionId={(sid) => setChatSessionId(sid)}
-            onAngleHint={(angle) => {
-              if (angle === 'frontseat' || angle === 'backseat' || angle === 'trunk') {
-                handleAngleClick(angle);
-              }
-            }}
+            onAngleHint={(angle) => handleAiAngleHint(angle)}
             onClose={() => setMode('chat')}
           />
         )}
