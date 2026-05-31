@@ -1,7 +1,6 @@
 from fastapi import FastAPI, APIRouter, HTTPException
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 import base64
@@ -15,14 +14,14 @@ import httpx
 from anthropic import AsyncAnthropic
 from agora_token_builder import RtcTokenBuilder
 
+import db_dynamo as ddb
+from db_dynamo import T_STATUS, T_LEADS, T_CHAT
+
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# MongoDB connection
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+# MongoDB removed — replaced by AWS DynamoDB (see db_dynamo.py)
 
 # Create the main app without a prefix
 app = FastAPI()
@@ -54,17 +53,17 @@ async def create_status_check(input: StatusCheckCreate):
     status_obj = StatusCheck(**input.model_dump())
     doc = status_obj.model_dump()
     doc['timestamp'] = doc['timestamp'].isoformat()
-    await db.status_checks.insert_one(doc)
+    await ddb.put_item(T_STATUS, doc)
     return status_obj
 
 
 @api_router.get("/status", response_model=List[StatusCheck])
 async def get_status_checks():
-    status_checks = await db.status_checks.find({}, {"_id": 0}).to_list(1000)
-    for check in status_checks:
-        if isinstance(check['timestamp'], str):
+    items = await ddb.scan_all(T_STATUS, limit=1000)
+    for check in items:
+        if isinstance(check.get('timestamp'), str):
             check['timestamp'] = datetime.fromisoformat(check['timestamp'])
-    return status_checks
+    return items
 
 
 # ──────────────────── TEST DRIVE LEADS ────────────────────
@@ -105,18 +104,20 @@ async def create_lead(payload: LeadCreate):
     doc = lead.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
 
-    await db.leads.insert_one(doc)
+    await ddb.put_item(T_LEADS, doc)
     logger.info(f"New test-drive lead: {lead.name} ({lead.phone}) — {lead.car_name} @ {lead.location}")
     return lead
 
 
 @api_router.get("/leads", response_model=List[Lead])
 async def list_leads():
-    leads = await db.leads.find({}, {"_id": 0}).sort("created_at", -1).to_list(500)
-    for l in leads:
+    items = await ddb.scan_all(T_LEADS, limit=500)
+    # DynamoDB has no native sort on scan — sort in app by created_at desc
+    items.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+    for l in items:
         if isinstance(l.get('created_at'), str):
             l['created_at'] = datetime.fromisoformat(l['created_at'])
-    return leads
+    return items
 
 
 # ──────────────────── ARIA — TEXT CHAT (Custom Anthropic Endpoint) ────────────────────
@@ -174,10 +175,7 @@ async def chat_text(payload: ChatTextRequest):
     )
 
     # Load prior turns for this session to maintain conversational memory
-    prior = await db.chat_messages.find(
-        {"session_id": session_id, "mode": "text"},
-        {"_id": 0, "user_message": 1, "ai_response": 1, "created_at": 1},
-    ).sort("created_at", 1).to_list(20)
+    prior = await ddb.query_by_session(T_CHAT, session_id=session_id, ascending=True, limit=20)
 
     messages = []
     for turn in prior:
@@ -210,16 +208,16 @@ async def chat_text(payload: ChatTextRequest):
         logger.exception("LLM call failed")
         raise HTTPException(status_code=502, detail=f"LLM error: {str(e)[:200]}")
 
-    await db.chat_messages.insert_one({
-        "id": str(uuid.uuid4()),
+    await ddb.put_item(T_CHAT, {
         "session_id": session_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "id": str(uuid.uuid4()),
         "car_id": payload.car_id,
         "car_name": payload.car_name,
         "user_message": payload.message,
         "ai_response": text,
         "mode": "text",
         "model": MODEL_ID,
-        "created_at": datetime.now(timezone.utc).isoformat(),
     })
 
     return ChatTextResponse(text=text, session_id=session_id)
@@ -400,8 +398,3 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
-
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    client.close()

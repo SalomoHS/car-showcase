@@ -28,3 +28,4 @@ emergentintegrations==0.1.2
 agora-token-builder==1.0.0
 httpx>=0.27.0
 anthropic>=0.40.0
+aioboto3>=13.0.0
