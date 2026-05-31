@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
-import { ChevronLeft, ChevronRight, ChevronUp, Send, RotateCw, Calendar, MessageSquare, Mic } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { ChevronLeft, ChevronRight, ChevronUp, Send, RotateCw, Calendar, MessageSquare, Mic, Sofa, Armchair, PackageOpen, ArrowLeft } from 'lucide-react';
 import axios from 'axios';
 import TestDriveModal from './TestDriveModal';
 import AvatarResponse from './AvatarResponse';
@@ -24,6 +24,7 @@ const CARS = [
     frames: buildFrames('destinator'),
     spinEnabled: true,
     bgTone: 'showroom',
+    angleStartFrames: { side: 12, back: 27 },
   },
   {
     id: 'xforce',
@@ -33,6 +34,7 @@ const CARS = [
     frames: buildFrames('xforce'),
     spinEnabled: true,
     bgTone: 'showroom',
+    angleStartFrames: { side: 27, back: 40 },
   },
   {
     id: 'pajero',
@@ -42,8 +44,16 @@ const CARS = [
     frames: buildFrames('pajero'),
     spinEnabled: true,
     bgTone: 'showroom',
+    angleStartFrames: { side: 16, back: 25 },
   },
 ];
+
+// Map each angle button to which startFrame group it uses (1-indexed frames)
+const ANGLE_TO_GROUP = {
+  frontseat: 'side',
+  backseat: 'side',
+  trunk: 'back',
+};
 
 // Add thumbnail (1st frame) after construction
 CARS.forEach((c) => { c.thumbnail = c.frames[0]; });
@@ -76,6 +86,20 @@ const CarShowcase = () => {
 
   const currentFrameRef = useRef(0);
   const dragRef = useRef({ isDragging: false, startX: 0, startFrame: 0 });
+
+  // ──────────────── Angle viewer state ────────────────
+  // null = inactive (normal 360° view)
+  // 'transitioning_in'  = animating 360° toward the start frame
+  // 'playing_video'     = mp4 playing forward
+  // 'at_angle'          = paused at last video frame, user is viewing the angle
+  // 'reversing_video'   = playing mp4 in reverse to return to start frame
+  const [angleState, setAngleState] = useState(null);
+  const [activeAngle, setActiveAngle] = useState(null);   // 'frontseat' | 'backseat' | 'trunk' | null
+  const [pendingAngle, setPendingAngle] = useState(null); // angle to switch to after reversing the current one
+  const [videoError, setVideoError] = useState(false);
+  const videoRef = useRef(null);
+  const transitionAnimRef = useRef(null);   // requestAnimationFrame handle for frame-to-frame transition
+  const reverseAnimRef = useRef(null);      // requestAnimationFrame handle for reverse-playback
 
   const selectedCar = CARS.find((c) => c.id === selectedCarId);
   const currentIdx = CARS.findIndex((c) => c.id === selectedCarId);
@@ -130,6 +154,158 @@ const CarShowcase = () => {
     setMenuOpen(false);
   };
 
+  // ──────────────── Angle viewer helpers ────────────────
+  // Smoothly animate `imageIndex` (and currentFrameRef) from current frame to target frame,
+  // taking the shortest path around the 360° loop. Calls `onDone` when finished.
+  const animateToFrame = useCallback((targetIdx, onDone) => {
+    if (transitionAnimRef.current) cancelAnimationFrame(transitionAnimRef.current);
+    const fromIdx = mod(Math.round(currentFrameRef.current), TOTAL_FRAMES);
+    // Choose shortest direction (+1 / -1)
+    const forwardDist = mod(targetIdx - fromIdx, TOTAL_FRAMES);
+    const backwardDist = mod(fromIdx - targetIdx, TOTAL_FRAMES);
+    const dist = Math.min(forwardDist, backwardDist);
+    const dir = forwardDist <= backwardDist ? 1 : -1;
+    if (dist === 0) { onDone && onDone(); return; }
+
+    const FRAMES_PER_SEC = 45; // 360° transition speed
+    let last = performance.now();
+    let accum = 0;
+    let stepsRemaining = dist;
+    let curr = fromIdx;
+
+    const tick = (now) => {
+      const dt = (now - last) / 1000;
+      last = now;
+      accum += dt * FRAMES_PER_SEC;
+      while (accum >= 1 && stepsRemaining > 0) {
+        curr = mod(curr + dir, TOTAL_FRAMES);
+        stepsRemaining -= 1;
+        accum -= 1;
+      }
+      currentFrameRef.current = curr;
+      setImageIndex(curr);
+      if (stepsRemaining <= 0) {
+        transitionAnimRef.current = null;
+        onDone && onDone();
+        return;
+      }
+      transitionAnimRef.current = requestAnimationFrame(tick);
+    };
+    transitionAnimRef.current = requestAnimationFrame(tick);
+  }, []);
+
+  // Reverse-play the angle video back to currentTime = 0, then call onDone.
+  const reverseVideoToStart = useCallback((onDone) => {
+    const v = videoRef.current;
+    if (!v || !v.duration || isNaN(v.duration)) { onDone && onDone(); return; }
+    if (reverseAnimRef.current) cancelAnimationFrame(reverseAnimRef.current);
+
+    // Match the forward playback speed (1 second of video reversed in 1 second).
+    const SPEED = 1.0;
+    let last = performance.now();
+    try { v.pause(); } catch (_) {}
+
+    const tick = (now) => {
+      const dt = (now - last) / 1000;
+      last = now;
+      const next = (v.currentTime || 0) - dt * SPEED;
+      if (next <= 0.02) {
+        try { v.currentTime = 0; } catch (_) {}
+        reverseAnimRef.current = null;
+        onDone && onDone();
+        return;
+      }
+      try { v.currentTime = next; } catch (_) {}
+      reverseAnimRef.current = requestAnimationFrame(tick);
+    };
+    reverseAnimRef.current = requestAnimationFrame(tick);
+  }, []);
+
+  // Compute the 1-indexed start frame for a given angle on the selected car
+  const startFrameFor = (angle) => {
+    const group = ANGLE_TO_GROUP[angle];
+    const startFrame1based = selectedCar.angleStartFrames?.[group];
+    if (!startFrame1based) return 0;
+    return mod(startFrame1based - 1, TOTAL_FRAMES); // convert to 0-indexed
+  };
+
+  // Internal: actually begin the transition into an angle (assumes nothing playing)
+  const enterAngle = useCallback((angle) => {
+    setVideoError(false);
+    setActiveAngle(angle);
+    setAngleState('transitioning_in');
+    const target = startFrameFor(angle);
+    animateToFrame(target, () => {
+      // Play the video for this angle
+      const v = videoRef.current;
+      if (!v) { setAngleState('at_angle'); return; }
+      try {
+        v.currentTime = 0;
+        const p = v.play();
+        if (p && typeof p.then === 'function') {
+          p.then(() => setAngleState('playing_video'))
+           .catch(() => { setVideoError(true); setAngleState('at_angle'); });
+        } else {
+          setAngleState('playing_video');
+        }
+      } catch (_) {
+        setVideoError(true);
+        setAngleState('at_angle');
+      }
+    });
+  }, [animateToFrame, selectedCar]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Public: handle "Frontseat" / "Backseat" / "Trunk" button click
+  const handleAngleClick = (angle) => {
+    if (showLoading) return;
+    // If we're already at this angle, do nothing
+    if (activeAngle === angle && (angleState === 'at_angle' || angleState === 'playing_video')) return;
+
+    // If currently inactive → just enter
+    if (!activeAngle) { enterAngle(angle); return; }
+
+    // Otherwise: reverse current angle first, then switch
+    setPendingAngle(angle);
+    setAngleState('reversing_video');
+    reverseVideoToStart(() => {
+      // pendingAngle is captured via state below; we use a fresh closure on the next tick
+      // but we can just call enterAngle(angle) directly since `angle` is in scope.
+      setPendingAngle(null);
+      // If user toggled the SAME angle again during reverse, ignore re-trigger
+      enterAngle(angle);
+    });
+  };
+
+  // Public: close the angle viewer and return to 360° (staying at start frame)
+  const handleAngleClose = () => {
+    if (!activeAngle) return;
+    setPendingAngle(null);
+    setAngleState('reversing_video');
+    reverseVideoToStart(() => {
+      setActiveAngle(null);
+      setAngleState(null);
+      setVideoError(false);
+    });
+  };
+
+  // Cleanup animation handles when car changes or unmounts
+  useEffect(() => {
+    return () => {
+      if (transitionAnimRef.current) cancelAnimationFrame(transitionAnimRef.current);
+      if (reverseAnimRef.current) cancelAnimationFrame(reverseAnimRef.current);
+    };
+  }, []);
+
+  // Reset angle viewer state on car switch
+  useEffect(() => {
+    if (transitionAnimRef.current) cancelAnimationFrame(transitionAnimRef.current);
+    if (reverseAnimRef.current) cancelAnimationFrame(reverseAnimRef.current);
+    setActiveAngle(null);
+    setAngleState(null);
+    setPendingAngle(null);
+    setVideoError(false);
+  }, [selectedCarId]);
+
   // ──────────────── Drag handlers (only when spin enabled) ────────────────
   const getEventX = (e) => {
     if (e.touches?.length) return e.touches[0].clientX;
@@ -139,6 +315,7 @@ const CarShowcase = () => {
 
   const handleDragStart = (e) => {
     if (!selectedCar.spinEnabled) return;
+    if (activeAngle) return; // drag disabled while viewing an interior/trunk angle
     dragRef.current = {
       isDragging: true,
       startX: getEventX(e),
@@ -255,6 +432,24 @@ const CarShowcase = () => {
                 decoding="sync"
               />
             ))}
+            {/* Angle video overlay — visible only when actively playing / paused at angle */}
+            <video
+              ref={videoRef}
+              className={`angle-video ${activeAngle && (angleState === 'playing_video' || angleState === 'at_angle' || angleState === 'reversing_video') ? 'visible' : ''}`}
+              src={activeAngle ? `/cars/views/${selectedCar.id}_${activeAngle}.mp4` : undefined}
+              playsInline
+              muted
+              preload="auto"
+              onEnded={() => setAngleState('at_angle')}
+              onError={() => { setVideoError(true); setAngleState('at_angle'); }}
+              data-testid="angle-video"
+            />
+            {videoError && activeAngle && (
+              <div className="angle-video-error" data-testid="angle-video-error">
+                <div className="angle-video-error-title">Video not available yet</div>
+                <div className="angle-video-error-sub">Drop <code>{selectedCar.id}_{activeAngle}.mp4</code> into <code>/public/cars/views/</code></div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -303,6 +498,55 @@ const CarShowcase = () => {
       >
         <ChevronRight size={28} strokeWidth={1.5} />
       </button>
+
+      {/* Bottom-right: angle viewer buttons (frontseat / backseat / trunk) */}
+      {!showLoading && selectedCar.spinEnabled && (
+        <div className="angle-buttons" data-testid="angle-buttons">
+          {activeAngle && (
+            <button
+              className="angle-btn angle-btn-back"
+              onClick={handleAngleClose}
+              data-testid="angle-btn-back"
+              disabled={angleState === 'transitioning_in' || angleState === 'reversing_video'}
+              aria-label="Back to 360 view"
+              title="Back to 360° view"
+            >
+              <ArrowLeft size={16} strokeWidth={2} />
+              <span>Back</span>
+            </button>
+          )}
+          <button
+            className={`angle-btn ${activeAngle === 'frontseat' ? 'active' : ''}`}
+            onClick={() => handleAngleClick('frontseat')}
+            disabled={angleState === 'transitioning_in' || angleState === 'reversing_video'}
+            data-testid="angle-btn-frontseat"
+            title="View front seat"
+          >
+            <Armchair size={16} strokeWidth={2} />
+            <span>Front seat</span>
+          </button>
+          <button
+            className={`angle-btn ${activeAngle === 'backseat' ? 'active' : ''}`}
+            onClick={() => handleAngleClick('backseat')}
+            disabled={angleState === 'transitioning_in' || angleState === 'reversing_video'}
+            data-testid="angle-btn-backseat"
+            title="View back seat"
+          >
+            <Sofa size={16} strokeWidth={2} />
+            <span>Back seat</span>
+          </button>
+          <button
+            className={`angle-btn ${activeAngle === 'trunk' ? 'active' : ''}`}
+            onClick={() => handleAngleClick('trunk')}
+            disabled={angleState === 'transitioning_in' || angleState === 'reversing_video'}
+            data-testid="angle-btn-trunk"
+            title="View trunk"
+          >
+            <PackageOpen size={16} strokeWidth={2} />
+            <span>Trunk</span>
+          </button>
+        </div>
+      )}
 
       {/* Click-outside layer for menu */}
       {menuOpen && (
