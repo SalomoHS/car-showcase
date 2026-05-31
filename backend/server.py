@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException
+from fastapi import FastAPI, APIRouter, HTTPException, Request
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 import os
@@ -223,6 +223,199 @@ async def chat_text(payload: ChatTextRequest):
     return ChatTextResponse(text=text, session_id=session_id)
 
 
+# ──────────────────── OPENAI-COMPATIBLE PROXY FOR AGORA CUSTOM LLM ────────────────────
+# Agora Conversational AI v2's custom LLM mode requires an OpenAI Chat Completions
+# compatible endpoint. This proxy accepts OpenAI requests, translates them to the
+# custom Anthropic Messages API, and streams back OpenAI-style SSE chunks.
+LLM_PROXY_SECRET = os.environ.get('LLM_PROXY_SECRET', '')
+
+
+class OpenAIChatMessage(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    role: str
+    content: Optional[object] = None  # str or list[{type,text}]
+
+
+class OpenAIChatRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    model: str
+    messages: List[OpenAIChatMessage]
+    max_tokens: Optional[int] = 1024
+    temperature: Optional[float] = None
+    top_p: Optional[float] = None
+    stream: Optional[bool] = False
+
+
+def _flatten_openai_content(c) -> str:
+    """OpenAI content can be a string or list of content parts. Return plain text."""
+    if c is None:
+        return ""
+    if isinstance(c, str):
+        return c
+    if isinstance(c, list):
+        parts = []
+        for part in c:
+            if isinstance(part, dict):
+                if part.get("type") == "text":
+                    parts.append(part.get("text", ""))
+        return "".join(parts)
+    return str(c)
+
+
+def _openai_to_anthropic(req: OpenAIChatRequest):
+    """Split OpenAI-style messages into Anthropic (system_string, [{role, content}])."""
+    system_parts: List[str] = []
+    msgs: List[dict] = []
+    for m in req.messages:
+        text = _flatten_openai_content(m.content)
+        if m.role == "system":
+            if text:
+                system_parts.append(text)
+        elif m.role in ("user", "assistant"):
+            if text:
+                msgs.append({"role": m.role, "content": text})
+        # ignore unknown roles (tool, function)
+    # Anthropic requires the first message to be from user. If none, inject empty placeholder.
+    if not msgs or msgs[0]["role"] != "user":
+        msgs.insert(0, {"role": "user", "content": "Hello"})
+    # Anthropic also rejects two consecutive same-role messages — merge them.
+    merged: List[dict] = []
+    for m in msgs:
+        if merged and merged[-1]["role"] == m["role"]:
+            merged[-1]["content"] = merged[-1]["content"] + "\n" + m["content"]
+        else:
+            merged.append(m)
+    return ("\n\n".join(system_parts) if system_parts else None), merged
+
+
+def _check_proxy_auth(authorization: Optional[str]):
+    if not LLM_PROXY_SECRET:
+        raise HTTPException(status_code=500, detail="LLM_PROXY_SECRET not configured on server")
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+    token = authorization.split(" ", 1)[1].strip()
+    if token != LLM_PROXY_SECRET:
+        raise HTTPException(status_code=403, detail="Invalid proxy token")
+
+
+@api_router.post("/llm-proxy/v1/chat/completions")
+async def llm_proxy_chat_completions(payload: OpenAIChatRequest, request: Request):
+    """OpenAI Chat Completions–compatible endpoint that proxies to the custom Anthropic endpoint.
+
+    Streaming (SSE) is used when `stream=true` (Agora always sets this), and the proxy
+    emits OpenAI `chat.completion.chunk` events terminated by `data: [DONE]`.
+    """
+    _check_proxy_auth(request.headers.get("authorization") or request.headers.get("Authorization"))
+
+    system_prompt, anth_messages = _openai_to_anthropic(payload)
+    # Pass through the model name from the proxy request, but fall back to env default.
+    model = payload.model or MODEL_ID
+
+    if payload.stream:
+        from fastapi.responses import StreamingResponse
+        import json as _json
+
+        async def event_stream():
+            completion_id = f"chatcmpl-{uuid.uuid4().hex}"
+            created = int(time.time())
+            try:
+                client = get_anthropic_client()
+                kwargs = {
+                    "model": model,
+                    "max_tokens": payload.max_tokens or 1024,
+                    "messages": anth_messages,
+                }
+                if system_prompt:
+                    kwargs["system"] = system_prompt
+                if payload.temperature is not None:
+                    kwargs["temperature"] = payload.temperature
+                if payload.top_p is not None:
+                    kwargs["top_p"] = payload.top_p
+
+                async with client.messages.stream(**kwargs) as stream:
+                    first = True
+                    async for delta in stream.text_stream:
+                        if not delta:
+                            continue
+                        chunk = {
+                            "id": completion_id,
+                            "object": "chat.completion.chunk",
+                            "created": created,
+                            "model": model,
+                            "choices": [
+                                {
+                                    "index": 0,
+                                    "delta": (
+                                        {"role": "assistant", "content": delta} if first
+                                        else {"content": delta}
+                                    ),
+                                    "finish_reason": None,
+                                }
+                            ],
+                        }
+                        first = False
+                        yield f"data: {_json.dumps(chunk)}\n\n"
+
+                # Final stop chunk
+                stop_chunk = {
+                    "id": completion_id,
+                    "object": "chat.completion.chunk",
+                    "created": created,
+                    "model": model,
+                    "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                }
+                yield f"data: {_json.dumps(stop_chunk)}\n\n"
+                yield "data: [DONE]\n\n"
+            except Exception as e:
+                logger.exception("llm-proxy stream failed")
+                err = {"error": {"message": str(e)[:300], "type": "upstream_error"}}
+                yield f"data: {_json.dumps(err)}\n\n"
+                yield "data: [DONE]\n\n"
+
+        return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+    # Non-streaming path
+    try:
+        client = get_anthropic_client()
+        kwargs = {
+            "model": model,
+            "max_tokens": payload.max_tokens or 1024,
+            "messages": anth_messages,
+        }
+        if system_prompt:
+            kwargs["system"] = system_prompt
+        if payload.temperature is not None:
+            kwargs["temperature"] = payload.temperature
+        if payload.top_p is not None:
+            kwargs["top_p"] = payload.top_p
+
+        resp = await client.messages.create(**kwargs)
+        parts = []
+        for block in resp.content or []:
+            btype = getattr(block, "type", None) or (block.get("type") if isinstance(block, dict) else None)
+            if btype == "text":
+                parts.append(getattr(block, "text", None) or (block.get("text") if isinstance(block, dict) else ""))
+        text = "".join(parts)
+    except Exception as e:
+        logger.exception("llm-proxy non-stream failed")
+        raise HTTPException(status_code=502, detail=f"LLM proxy error: {str(e)[:200]}")
+
+    return {
+        "id": f"chatcmpl-{uuid.uuid4().hex}",
+        "object": "chat.completion",
+        "created": int(time.time()),
+        "model": model,
+        "choices": [
+            {
+                "index": 0,
+                "message": {"role": "assistant", "content": text},
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+    }
+
+
 # ──────────────────── ARIA — VOICE CHAT (Agora Conversational AI) ────────────────────
 AGORA_APP_ID = os.environ.get('AGORA_APP_ID')
 AGORA_APP_CERTIFICATE = os.environ.get('AGORA_APP_CERTIFICATE')
@@ -293,9 +486,28 @@ async def agora_start(payload: AgoraStartRequest):
 
     agent_name = f"aria-{payload.car_id}-{suffix}"
 
+    # Public URL of our OpenAI-compatible proxy that Agora's engine will call.
+    # Falls back to the request's own base URL inferred from REACT_APP_BACKEND_URL.
+    backend_public_url = os.environ.get('PUBLIC_BACKEND_URL') or os.environ.get('REACT_APP_BACKEND_URL') or ''
+    if not backend_public_url:
+        # Read from frontend/.env as a last resort (deployed preview/prod URL).
+        try:
+            fe_env_path = ROOT_DIR.parent / 'frontend' / '.env'
+            if fe_env_path.exists():
+                for line in fe_env_path.read_text().splitlines():
+                    if line.startswith('REACT_APP_BACKEND_URL='):
+                        backend_public_url = line.split('=', 1)[1].strip().strip('"').strip("'")
+                        break
+        except Exception:
+            pass
+    if not backend_public_url:
+        raise HTTPException(status_code=500, detail="PUBLIC_BACKEND_URL / REACT_APP_BACKEND_URL not configured — Agora needs a public URL to reach the LLM proxy")
+    llm_proxy_url = f"{backend_public_url.rstrip('/')}/api/llm-proxy/v1/chat/completions"
+
     body = {
         "name": agent_name,
-        "preset": "openai_gpt_4_1_mini,minimax_speech_2_8_turbo",
+        # TTS-only preset; LLM is fully custom via properties.llm below.
+        "preset": "minimax_speech_2_8_turbo",
         "properties": {
             "channel": channel,
             "token": agent_token,
@@ -304,12 +516,20 @@ async def agora_start(payload: AgoraStartRequest):
             "idle_timeout": 120,
             "asr": {"language": "en-US"},
             "llm": {
+                "url": llm_proxy_url,
+                "api_key": LLM_PROXY_SECRET,
                 "system_messages": [
                     {"role": "system", "content": system_prompt}
                 ],
                 "greeting_message": greeting,
                 "failure_message": "Sorry, one moment while I reconnect.",
                 "max_history": 16,
+                "input_modalities": ["text"],
+                "output_modalities": ["text"],
+                "params": {
+                    "model": MODEL_ID,
+                    "max_tokens": 512,
+                },
             },
             "tts": {
                 "params": {

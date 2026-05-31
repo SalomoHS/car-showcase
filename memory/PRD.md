@@ -14,8 +14,8 @@
   - Tables: `virtual-dealer-status-checks`, `virtual-dealer-leads`, `virtual-dealer-chat-logs`.
   - Async access via `aioboto3` (helper module `backend/db_dynamo.py`).
 - **3rd-party LLMs**:
-  - **Custom Anthropic endpoint** (`claude-sonnet-4.6`) — text chat. Configured via `ANTHROPIC_API_KEY`, `MODEL_ENDPOINT`, `MODEL_ID` env vars. Multi-turn memory loaded from `virtual-dealer-chat-logs` table.
-  - **Agora Conversational AI Engine** — voice (preset `openai_gpt_4_1_mini,minimax_speech_2_8_turbo`, Agora-managed keys). (Still uses Agora's built-in model; not yet swapped to the custom Anthropic endpoint.)
+  - **Custom Anthropic endpoint** (`claude-sonnet-4.6`) — text chat AND voice chat brain. Configured via `ANTHROPIC_API_KEY`, `MODEL_ENDPOINT`, `MODEL_ID` env vars. Multi-turn memory loaded from `virtual-dealer-chat-logs` table.
+  - **Agora Conversational AI Engine** — voice. Now uses `preset: "minimax_speech_2_8_turbo"` (TTS only) + a fully custom LLM that calls our own OpenAI-compatible proxy `/api/llm-proxy/v1/chat/completions`, which in turn translates to the Anthropic Messages API and streams back via SSE.
 
 ## Key Files
 - `frontend/src/components/CarShowcase.js` — main UI; owns mode state, 360° drag, angle viewer state machine.
@@ -31,7 +31,8 @@
 | Method | Path | Purpose |
 |---|---|---|
 | POST | `/api/chat-text` | Aria text response via custom Anthropic endpoint with DynamoDB-backed multi-turn memory. |
-| POST | `/api/agora/start` | Start Agora Conversational AI agent. |
+| POST | `/api/llm-proxy/v1/chat/completions` | OpenAI Chat Completions–compatible proxy for Agora's custom LLM; translates to Anthropic Messages API and streams SSE chunks. Auth: `Authorization: Bearer ${LLM_PROXY_SECRET}`. |
+| POST | `/api/agora/start` | Start Agora Conversational AI agent. Uses MiniMax TTS preset + custom LLM (proxy) pointing to Anthropic claude-sonnet-4.6. |
 | POST | `/api/agora/stop` | Stop the Agora agent. |
 | POST/GET | `/api/leads` | Test-drive leads CRUD (DynamoDB). |
 | POST/GET | `/api/status` | Health check (DynamoDB). |
@@ -70,10 +71,10 @@
 - ✅ DynamoDB leads: POST returns full lead with UUID, GET returns sorted list.
 
 ## Backlog / Future
-- **P2** — Optionally swap Agora voice agent's built-in `openai_gpt_4_1_mini` for the custom Anthropic endpoint (user previously skipped this question).
 - **P2** — Add GSI on `virtual-dealer-leads.created_at` for native sort when lead volume grows.
 - **P2** — Add TTL on `virtual-dealer-chat-logs` (e.g., 30 days) to auto-prune sessions.
-- **P2** — Pre-compute reversed MP4s and switch to swapping `src` instead of rAF-stepping `currentTime` (smoother on long videos / mobile).
+- **P2** — Persist voice-mode transcripts via Agora callback hooks → log into `virtual-dealer-chat-logs` so voice and text share the same conversation history per session.
+- **P2** — Optional `chat.completion.custom_metadata` first chunk from the proxy with `interruptable: false` for filler phrases, smoother voice UX.
 
 ## Test Environment Note
 - Per-angle assets are now image sequences (no codec dependency). Works identically in Playwright bundled Chromium and in real Google Chrome — no `executable_path` workaround needed.
