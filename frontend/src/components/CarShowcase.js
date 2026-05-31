@@ -458,6 +458,11 @@ const CarShowcase = () => {
       setAvatarText(data.text || '');
       setChatSessionId(data.session_id || null);
       setAvatarStatus('idle');
+      // Auto-trigger angle viewer when Aria's reply maps to a specific car angle.
+      const newAngle = data.angle;
+      if (newAngle === 'frontseat' || newAngle === 'backseat' || newAngle === 'trunk') {
+        handleAngleClick(newAngle);
+      }
     } catch (err) {
       console.error('Chat failed', err);
       setAvatarText("Sorry, I couldn't reach the showroom server. Please try again.");
@@ -671,6 +676,11 @@ const CarShowcase = () => {
             car={selectedCar}
             sessionId={chatSessionId}
             onSessionId={(sid) => setChatSessionId(sid)}
+            onAngleHint={(angle) => {
+              if (angle === 'frontseat' || angle === 'backseat' || angle === 'trunk') {
+                handleAngleClick(angle);
+              }
+            }}
             onClose={() => setMode('chat')}
           />
         )}

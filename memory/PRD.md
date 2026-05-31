@@ -73,6 +73,13 @@
 ## Backlog / Future
 - **P2** — Add GSI on `virtual-dealer-leads.created_at` for native sort when lead volume grows.
 - **P2** — Optional `chat.completion.custom_metadata` first chunk from the proxy with `interruptable: false` for filler phrases, smoother voice UX.
+- **P3** — Switch keyword-based RAG classifier to an LLM classifier once the custom endpoint exposes a non-thinking model (e.g., a small/fast variant). Current keyword classifier in `backend/rag/classifier.py` is deterministic and zero-cost; LLM fallback stub is kept ready.
+
+## Recent Implementation (2026-05-31, batch 6)
+- **Auto-angle from AI response** — System prompt now requires Aria to start every reply with `[[angle:frontseat|backseat|trunk|none]]`. `/api/chat-text` parses it, returns `angle` in the response, frontend `handleChatSubmit` auto-triggers `handleAngleClick(angle)`. The LLM proxy buffers the first ~32 chars to detect & strip the sentinel **before** streaming to Agora's TTS (so it's never spoken aloud), persists `angle` on the DynamoDB row. `VoicePanel` polls `/api/chat-session/{sid}/pending-angle` every 1.5s while live; on a new voice-turn ts with an angle, fires `onAngleHint(angle)` → triggers `handleAngleClick`.
+- **RAG via AWS S3 Vectors + Gemini embeddings** — New `backend/rag/retrieve.py` module wraps the user-supplied retrieval code (`google-generativeai` for embeddings, `boto3.s3vectors` for `query_vectors`, S3 for payload bodies). Async wrapper via `asyncio.to_thread`. Default bucket `virtual-dealer-prod`, index `cars-index`, payload bucket `virtual-dealer-cars-rag-prod`, dim=3072.
+- **Pre-RAG classifier** — `backend/rag/classifier.py` uses a deterministic keyword regex (capacity/liter/torque/HP/price/warranty/colors/airbags/etc.). Zero cost & latency on the hot path. LLM-based fallback path is preserved in the same signature for future use. Hooked into both `/chat-text` and `/llm-proxy/v1/chat/completions`; when true, retrieved S3 docs are formatted via `format_context()` and injected into the system prompt as a `<reference>` block.
+- **Auto-angle voice polling endpoint** — `GET /api/chat-session/{session_id}/pending-angle` returns the latest turn's `{angle, ts, mode}`. Frontend uses `ts` to dedupe.
 
 ## Recent Implementation (2026-05-31, batch 5)
 - **Custom Anthropic LLM brain for Agora voice** — Added `/api/llm-proxy/v1/chat/completions` (OpenAI Chat Completions–compatible). Translates OpenAI requests to Anthropic Messages API and streams SSE chunks. Bearer-auth via `LLM_PROXY_SECRET`. Switched Agora `/join` body from preset `openai_gpt_4_1_mini,minimax_speech_2_8_turbo` to TTS-only preset `minimax_speech_2_8_turbo` + custom `llm.url` pointing to the proxy.

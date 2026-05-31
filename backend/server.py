@@ -156,8 +156,43 @@ ARIA_SYSTEM_PROMPT_TMPL = (
     "The customer is currently viewing the {car_name} ({car_tagline}). "
     "Answer their question in 2-3 short sentences with a warm, conversational tone. "
     "Be specific about the car when relevant, and gently encourage interest without being pushy. "
-    "Never mention you are an AI; speak as Aria the sales specialist."
+    "Never mention you are an AI; speak as Aria the sales specialist.\n\n"
+    "── ANGLE CONTROL ──\n"
+    "ALWAYS start every reply with a tag in this exact format on its own:\n"
+    "  [[angle:VALUE]]\n"
+    "where VALUE is one of: frontseat, backseat, trunk, none.\n"
+    "Choose the angle based on the TOPIC of the question — regardless of whether you "
+    "know the specific answer or have to defer:\n"
+    "  - frontseat → dashboard, steering wheel, driver controls, infotainment, climate, "
+    "front cabin, front seats, instrument cluster, sunroof, audio system\n"
+    "  - backseat  → rear cabin, rear passenger space, second/third-row legroom, "
+    "rear AC vents, child seats, rear entertainment\n"
+    "  - trunk     → cargo area, boot, luggage space, rear cargo capacity (in liters), "
+    "load capacity, tailgate, roof rails for cargo\n"
+    "  - none      → anything else (exterior styling, engine, price, warranty, fuel "
+    "economy, drivetrain, safety, general questions, greetings)\n"
+    "Emit the tag exactly once at the very start, then continue with your normal reply text.\n"
+    "Never speak the tag aloud or describe it — it is silently consumed by the UI."
 )
+
+# Sentinel parser
+_ANGLE_RE = __import__('re').compile(r"^\s*\[\[angle:(frontseat|backseat|trunk|none)\]\]\s*", __import__('re').IGNORECASE)
+
+
+def parse_angle_tag(text: str):
+    """Extract [[angle:X]] tag from the start of an LLM reply.
+
+    Returns (angle_or_none, cleaned_text). `angle_or_none` is one of
+    'frontseat'|'backseat'|'trunk' (lower-case) or None if absent / 'none'.
+    """
+    if not text:
+        return None, text or ""
+    m = _ANGLE_RE.match(text)
+    if not m:
+        return None, text
+    angle = m.group(1).lower()
+    cleaned = text[m.end():].lstrip()
+    return (None if angle == 'none' else angle), cleaned
 
 
 class ChatTextRequest(BaseModel):
@@ -171,6 +206,26 @@ class ChatTextRequest(BaseModel):
 class ChatTextResponse(BaseModel):
     text: str
     session_id: str
+    angle: Optional[str] = None
+    used_rag: bool = False
+
+
+async def _build_rag_context(question: str, car_name: str) -> str:
+    """Run classifier → optional retrieval → return formatted context block."""
+    try:
+        from rag.classifier import classify_need_rag
+        from rag.retrieve import retrieve, format_context
+        client = get_anthropic_client()
+        need = await classify_need_rag(client, MODEL_ID, question)
+        logger.info("rag classifier: question=%r need_rag=%s", question[:80], need)
+        if not need:
+            return ""
+        # Bias retrieval toward the currently displayed car
+        results = await retrieve(f"{car_name}: {question}", top_k=5)
+        return format_context(results)
+    except Exception:
+        logger.exception("RAG pipeline failed; continuing without context")
+        return ""
 
 
 @api_router.post("/chat-text", response_model=ChatTextResponse)
@@ -179,14 +234,26 @@ async def chat_text(payload: ChatTextRequest):
         raise HTTPException(status_code=400, detail="message cannot be empty")
 
     session_id = payload.session_id or f"car-{payload.car_id}-{uuid.uuid4().hex[:8]}"
-    system_prompt = ARIA_SYSTEM_PROMPT_TMPL.format(
+    base_system = ARIA_SYSTEM_PROMPT_TMPL.format(
         car_name=payload.car_name,
         car_tagline=payload.car_tagline or '',
     )
 
-    # Load prior turns for this session to maintain conversational memory
-    prior = await ddb.query_by_session(T_CHAT, session_id=session_id, ascending=True, limit=20)
+    # Step 1: classifier → optional RAG
+    rag_context = await _build_rag_context(payload.message, payload.car_name)
+    used_rag = bool(rag_context)
+    if used_rag:
+        system_prompt = (
+            base_system
+            + "\n\nUse only the facts in the <reference> block below to answer specific spec questions. "
+              "If the reference doesn't cover it, say so briefly and offer to follow up.\n"
+              "<reference>\n" + rag_context + "\n</reference>"
+        )
+    else:
+        system_prompt = base_system
 
+    # Step 2: rehydrate prior turns
+    prior = await ddb.query_by_session(T_CHAT, session_id=session_id, ascending=True, limit=20)
     messages = []
     for turn in prior:
         if turn.get("user_message"):
@@ -195,6 +262,7 @@ async def chat_text(payload: ChatTextRequest):
             messages.append({"role": "assistant", "content": turn["ai_response"]})
     messages.append({"role": "user", "content": payload.message})
 
+    # Step 3: main LLM call
     try:
         client = get_anthropic_client()
         resp = await client.messages.create(
@@ -203,20 +271,22 @@ async def chat_text(payload: ChatTextRequest):
             system=system_prompt,
             messages=messages,
         )
-        # Concatenate text blocks from the response
         parts = []
         for block in resp.content or []:
             block_type = getattr(block, "type", None) or (block.get("type") if isinstance(block, dict) else None)
             if block_type == "text":
                 parts.append(getattr(block, "text", None) or (block.get("text") if isinstance(block, dict) else ""))
-        text = ("".join(parts)).strip()
-        if not text:
+        raw_text = ("".join(parts)).strip()
+        if not raw_text:
             raise ValueError("Empty response from model")
     except HTTPException:
         raise
     except Exception as e:
         logger.exception("LLM call failed")
         raise HTTPException(status_code=502, detail=f"LLM error: {str(e)[:200]}")
+
+    # Step 4: parse the angle sentinel and strip it from the visible text
+    angle, text = parse_angle_tag(raw_text)
 
     await ddb.put_item(T_CHAT, {
         "session_id": session_id,
@@ -226,12 +296,14 @@ async def chat_text(payload: ChatTextRequest):
         "car_name": payload.car_name,
         "user_message": payload.message,
         "ai_response": text,
+        "angle": angle,
+        "used_rag": used_rag,
         "mode": "text",
         "model": MODEL_ID,
         "expires_at": _chat_expires_at(),
     })
 
-    return ChatTextResponse(text=text, session_id=session_id)
+    return ChatTextResponse(text=text, session_id=session_id, angle=angle, used_rag=used_rag)
 
 
 # ──────────────────── OPENAI-COMPATIBLE PROXY FOR AGORA CUSTOM LLM ────────────────────
@@ -323,7 +395,14 @@ def _last_user_text(messages: List[OpenAIChatMessage]) -> str:
     return ""
 
 
-async def _persist_voice_turn(session_id: str, user_text: str, assistant_text: str, model: str) -> None:
+async def _persist_voice_turn(
+    session_id: str,
+    user_text: str,
+    assistant_text: str,
+    model: str,
+    angle: Optional[str] = None,
+    used_rag: bool = False,
+) -> None:
     """Write a voice-mode turn into the shared chat-log table.
 
     Skipped silently if session_id is empty (proxy can also be used directly without a session).
@@ -338,6 +417,8 @@ async def _persist_voice_turn(session_id: str, user_text: str, assistant_text: s
             "id": str(uuid.uuid4()),
             "user_message": user_text or "",
             "ai_response": assistant_text or "",
+            "angle": angle,
+            "used_rag": used_rag,
             "mode": "voice",
             "model": model,
             "expires_at": _chat_expires_at(),
@@ -363,6 +444,19 @@ async def llm_proxy_chat_completions(payload: OpenAIChatRequest, request: Reques
     session_id = (payload.user or "").strip() or None
     last_user_text = _last_user_text(payload.messages)
 
+    # RAG: classifier → optional context injection
+    used_rag = False
+    if last_user_text:
+        rag_ctx = await _build_rag_context(last_user_text, car_name="")
+        if rag_ctx:
+            used_rag = True
+            ref_block = (
+                "\n\nUse only the facts in the <reference> block below to answer specific "
+                "spec questions. If the reference doesn't cover it, say so briefly.\n"
+                "<reference>\n" + rag_ctx + "\n</reference>"
+            )
+            system_prompt = (system_prompt or "") + ref_block
+
     if payload.stream:
         from fastapi.responses import StreamingResponse
         import json as _json
@@ -371,6 +465,29 @@ async def llm_proxy_chat_completions(payload: OpenAIChatRequest, request: Reques
             completion_id = f"chatcmpl-{uuid.uuid4().hex}"
             created = int(time.time())
             assistant_buf: List[str] = []
+            angle_value: Optional[str] = None
+            pending = ""
+            sentinel_resolved = False
+            SENTINEL_PEEK = 32
+
+            def make_chunk(text_delta: str, role_first: bool) -> dict:
+                return {
+                    "id": completion_id,
+                    "object": "chat.completion.chunk",
+                    "created": created,
+                    "model": model,
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": (
+                                {"role": "assistant", "content": text_delta} if role_first
+                                else {"content": text_delta}
+                            ),
+                            "finish_reason": None,
+                        }
+                    ],
+                }
+
             try:
                 client = get_anthropic_client()
                 kwargs = {
@@ -385,30 +502,41 @@ async def llm_proxy_chat_completions(payload: OpenAIChatRequest, request: Reques
                 if payload.top_p is not None:
                     kwargs["top_p"] = payload.top_p
 
+                role_first = True
                 async with client.messages.stream(**kwargs) as stream:
-                    first = True
                     async for delta in stream.text_stream:
                         if not delta:
                             continue
+                        if not sentinel_resolved:
+                            pending += delta
+                            m = _ANGLE_RE.match(pending)
+                            if m:
+                                a = m.group(1).lower()
+                                angle_value = None if a == 'none' else a
+                                remaining = pending[m.end():].lstrip()
+                                sentinel_resolved = True
+                                if remaining:
+                                    assistant_buf.append(remaining)
+                                    yield f"data: {_json.dumps(make_chunk(remaining, role_first))}\n\n"
+                                    role_first = False
+                                pending = ""
+                                continue
+                            if len(pending) >= SENTINEL_PEEK:
+                                sentinel_resolved = True
+                                assistant_buf.append(pending)
+                                yield f"data: {_json.dumps(make_chunk(pending, role_first))}\n\n"
+                                role_first = False
+                                pending = ""
+                            continue
+                        # Sentinel already handled — pass-through
                         assistant_buf.append(delta)
-                        chunk = {
-                            "id": completion_id,
-                            "object": "chat.completion.chunk",
-                            "created": created,
-                            "model": model,
-                            "choices": [
-                                {
-                                    "index": 0,
-                                    "delta": (
-                                        {"role": "assistant", "content": delta} if first
-                                        else {"content": delta}
-                                    ),
-                                    "finish_reason": None,
-                                }
-                            ],
-                        }
-                        first = False
-                        yield f"data: {_json.dumps(chunk)}\n\n"
+                        yield f"data: {_json.dumps(make_chunk(delta, role_first))}\n\n"
+                        role_first = False
+
+                # Flush leftover pending if response shorter than SENTINEL_PEEK
+                if not sentinel_resolved and pending:
+                    assistant_buf.append(pending)
+                    yield f"data: {_json.dumps(make_chunk(pending, role_first))}\n\n"
 
                 # Final stop chunk
                 stop_chunk = {
@@ -432,6 +560,8 @@ async def llm_proxy_chat_completions(payload: OpenAIChatRequest, request: Reques
                     user_text=last_user_text,
                     assistant_text="".join(assistant_buf),
                     model=model,
+                    angle=angle_value,
+                    used_rag=used_rag,
                 )
 
         return StreamingResponse(event_stream(), media_type="text/event-stream")
@@ -457,10 +587,13 @@ async def llm_proxy_chat_completions(payload: OpenAIChatRequest, request: Reques
             btype = getattr(block, "type", None) or (block.get("type") if isinstance(block, dict) else None)
             if btype == "text":
                 parts.append(getattr(block, "text", None) or (block.get("text") if isinstance(block, dict) else ""))
-        text = "".join(parts)
+        raw_text = "".join(parts)
     except Exception as e:
         logger.exception("llm-proxy non-stream failed")
         raise HTTPException(status_code=502, detail=f"LLM proxy error: {str(e)[:200]}")
+
+    # Strip angle sentinel for the non-streaming response too
+    angle_value, text = parse_angle_tag(raw_text)
 
     # Persist the non-streaming turn too (e.g., for manual proxy testing).
     await _persist_voice_turn(
@@ -468,6 +601,8 @@ async def llm_proxy_chat_completions(payload: OpenAIChatRequest, request: Reques
         user_text=last_user_text,
         assistant_text=text,
         model=model,
+        angle=angle_value,
+        used_rag=used_rag,
     )
 
     return {
@@ -483,6 +618,29 @@ async def llm_proxy_chat_completions(payload: OpenAIChatRequest, request: Reques
             }
         ],
         "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+    }
+
+
+# ──────────────────── ANGLE POLLING (voice mode → UI sync) ────────────────────
+@api_router.get("/chat-session/{session_id}/pending-angle")
+async def get_pending_angle(session_id: str):
+    """Return the most recent voice turn's parsed angle for a session.
+
+    Frontend polls this every ~1.5s while in voice mode. The returned `ts` field
+    advances only when a new voice turn lands, so the client can ignore duplicates.
+    """
+    try:
+        turns = await ddb.query_by_session(T_CHAT, session_id=session_id, ascending=False, limit=1)
+    except Exception:
+        logger.exception("pending-angle query failed")
+        raise HTTPException(status_code=502, detail="lookup failed")
+    if not turns:
+        return {"angle": None, "ts": None, "mode": None}
+    t = turns[0]
+    return {
+        "angle": t.get("angle"),
+        "ts": t.get("created_at"),
+        "mode": t.get("mode"),
     }
 
 

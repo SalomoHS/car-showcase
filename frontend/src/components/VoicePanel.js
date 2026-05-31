@@ -15,7 +15,7 @@ const PRESENTER_IMAGE =
  *   3. Subscribe to remote audio (Aria) → autoplay
  *   4. On close → unpublish, leave, POST /api/agora/stop
  */
-const VoicePanel = ({ car, sessionId, onSessionId, onClose }) => {
+const VoicePanel = ({ car, sessionId, onSessionId, onAngleHint, onClose }) => {
   const [status, setStatus] = useState('connecting'); // connecting | live | error
   const [errorMsg, setErrorMsg] = useState('');
   const [micMuted, setMicMuted] = useState(false);
@@ -25,6 +25,44 @@ const VoicePanel = ({ car, sessionId, onSessionId, onClose }) => {
   const micTrackRef = useRef(null);
   const agentIdRef = useRef(null);
   const remoteVolumeIntervalRef = useRef(null);
+  const sessionIdRef = useRef(sessionId);
+  const angleHintRef = useRef(onAngleHint);
+  const lastAngleTsRef = useRef(null);
+  const anglePollIntervalRef = useRef(null);
+
+  // Keep refs up to date so the polling interval below sees the latest callback / session.
+  useEffect(() => { angleHintRef.current = onAngleHint; }, [onAngleHint]);
+
+  // ─────────── Poll pending-angle while voice is live ───────────
+  useEffect(() => {
+    if (status !== 'live' || !sessionIdRef.current) return undefined;
+    const poll = async () => {
+      try {
+        const sid = sessionIdRef.current;
+        if (!sid) return;
+        const { data } = await axios.get(
+          `${API}/chat-session/${encodeURIComponent(sid)}/pending-angle`,
+          { timeout: 4000 }
+        );
+        if (!data || data.mode !== 'voice') return;
+        // Only react to fresh voice turns we haven't already processed.
+        if (!data.ts || data.ts === lastAngleTsRef.current) return;
+        lastAngleTsRef.current = data.ts;
+        if (data.angle && angleHintRef.current) {
+          angleHintRef.current(data.angle);
+        }
+      } catch (_) {
+        // Network blips are fine; we just retry on the next tick.
+      }
+    };
+    // Run once immediately so initial state is captured (without firing a stale angle).
+    poll();
+    anglePollIntervalRef.current = setInterval(poll, 1500);
+    return () => {
+      if (anglePollIntervalRef.current) clearInterval(anglePollIntervalRef.current);
+      anglePollIntervalRef.current = null;
+    };
+  }, [status]);
 
   // ─────────── Connect on mount ───────────
   useEffect(() => {
@@ -48,6 +86,19 @@ const VoicePanel = ({ car, sessionId, onSessionId, onClose }) => {
         // Surface the (possibly newly generated) session_id back to the parent so
         // voice + text share one transcript when the user switches modes.
         if (data.session_id && onSessionId) onSessionId(data.session_id);
+        sessionIdRef.current = data.session_id || sessionId || null;
+        // Snapshot the latest existing turn so the angle-poller doesn't fire on
+        // a previous (already-shown) angle from prior chat history.
+        try {
+          const sid = sessionIdRef.current;
+          if (sid) {
+            const snap = await axios.get(
+              `${API}/chat-session/${encodeURIComponent(sid)}/pending-angle`,
+              { timeout: 4000 }
+            );
+            lastAngleTsRef.current = snap?.data?.ts || null;
+          }
+        } catch (_) {}
 
         // 2) Join the channel as the user
         const client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
