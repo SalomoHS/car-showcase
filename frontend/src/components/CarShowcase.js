@@ -432,18 +432,28 @@ const CarShowcase = () => {
                 decoding="sync"
               />
             ))}
-            {/* Angle video overlay — visible only when actively playing / paused at angle */}
-            <video
-              ref={videoRef}
-              className={`angle-video ${activeAngle && (angleState === 'playing_video' || angleState === 'at_angle' || angleState === 'reversing_video') ? 'visible' : ''}`}
-              src={activeAngle ? `/cars/views/${selectedCar.id}_${activeAngle}.mp4` : undefined}
-              playsInline
-              muted
-              preload="auto"
-              onEnded={() => setAngleState('at_angle')}
-              onError={() => { setVideoError(true); setAngleState('at_angle'); }}
-              data-testid="angle-video"
-            />
+            {/* Angle video overlay — only mounted while an angle is active so src swaps don't abort. */}
+            {activeAngle && (
+              <video
+                key={`${selectedCar.id}-${activeAngle}`}
+                ref={videoRef}
+                className={`angle-video ${(angleState === 'playing_video' || angleState === 'at_angle' || angleState === 'reversing_video') ? 'visible' : ''}`}
+                src={`/cars/views/${selectedCar.id}_${activeAngle}.mp4`}
+                playsInline
+                muted
+                preload="auto"
+                onEnded={() => setAngleState('at_angle')}
+                onError={(e) => {
+                  // Only treat as failure when the media element reports an actual error code
+                  const err = e?.currentTarget?.error;
+                  if (err && err.code) {
+                    setVideoError(true);
+                    setAngleState('at_angle');
+                  }
+                }}
+                data-testid="angle-video"
+              />
+            )}
             {videoError && activeAngle && (
               <div className="angle-video-error" data-testid="angle-video-error">
                 <div className="angle-video-error-title">Video not available yet</div>

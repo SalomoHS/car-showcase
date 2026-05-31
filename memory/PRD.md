@@ -3,71 +3,74 @@
 ## Original Problem Statement
 > build web app to showcase all angle from cars. just provide button front/back/right/left. so on startup showcase front. but when i click button back, it will animate from front to back. so the state now is back. when i click right. animate from back to right and so on. just use image sequence
 
-## Latest Problem Statement (2026-02-29)
-> Replace D-ID avatar with Agora and use Agora's Conversational AI. Add a toggle on the right side of the chatbox to switch between Conversation (voice) and Chat (text) modes. Chat mode = pure text + static Aria image. Voice mode = always-listening (auto VAD), user can deactivate/mute. TTS = Agora-managed MiniMax.
+## Recent Problem Statements
+- **2026-02-29** — Replace D-ID avatar with Agora and use Agora's Conversational AI. Add a toggle on the right side of the chatbox to switch between Conversation (voice) and Chat (text) modes.
+- **2026-05-31** — (1) Replace Emergent LLM chat with user's custom Anthropic endpoint (`claude-sonnet-4.6`). (2) Migrate database from MongoDB to AWS DynamoDB. (3) Add trunk / front seat / back seat buttons at bottom-right of the car viewer: clicking animates the 360° sequence to a per-car target frame, then plays a per-angle MP4 that pauses on its last frame. Clicking "Back" or another angle reverses the video to the start frame then returns/transitions.
 
 ## Architecture
 - **Frontend**: React 19 (CRA + craco). Lucide icons. CSS in `App.css`.
-- **Backend**: FastAPI (uvicorn). MongoDB for leads & chat history.
-- **3rd-party**:
-  - **Agora Conversational AI Engine** (voice) — preset `openai_gpt_4_1_mini,minimax_speech_2_8_turbo` (Agora-managed keys).
-  - **Emergent LLM (gpt-4.1-mini)** — text chat mode only.
+- **Backend**: FastAPI (uvicorn).
+- **Database**: AWS DynamoDB (migrated from MongoDB on 2026-05-31).
+  - Tables: `virtual-dealer-status-checks`, `virtual-dealer-leads`, `virtual-dealer-chat-logs`.
+  - Async access via `aioboto3` (helper module `backend/db_dynamo.py`).
+- **3rd-party LLMs**:
+  - **Custom Anthropic endpoint** (`claude-sonnet-4.6`) — text chat. Configured via `ANTHROPIC_API_KEY`, `MODEL_ENDPOINT`, `MODEL_ID` env vars. Multi-turn memory loaded from `virtual-dealer-chat-logs` table.
+  - **Agora Conversational AI Engine** — voice (preset `openai_gpt_4_1_mini,minimax_speech_2_8_turbo`, Agora-managed keys). (Still uses Agora's built-in model; not yet swapped to the custom Anthropic endpoint.)
 
 ## Key Files
-- `frontend/src/components/CarShowcase.js` — main UI, owns mode state.
-- `frontend/src/components/AvatarResponse.js` — text bubble + static Aria image (no video).
-- `frontend/src/components/VoicePanel.js` — Agora RTC session + mic/hangup controls.
+- `frontend/src/components/CarShowcase.js` — main UI; owns mode state, 360° drag, angle viewer state machine.
+- `frontend/src/components/AvatarResponse.js` — text bubble + static Aria image.
+- `frontend/src/components/VoicePanel.js` — Agora RTC session.
+- `frontend/public/cars/{destinator,xforce,pajero}/frame_01..60.jpg` — 60-frame 360° sequences.
+- `frontend/public/cars/views/{destinator,xforce,pajero}_{frontseat,backseat,trunk}.mp4` — 9 angle videos (H.264 yuv420p).
 - `backend/server.py` — `/api/chat-text`, `/api/agora/start`, `/api/agora/stop`, `/api/leads`, `/api/status`.
+- `backend/db_dynamo.py` — async DynamoDB helper (put_item, get_item, scan_all, query_partition).
+- `backend/bootstrap_dynamo.py` — table provisioning script (idempotent).
 
 ## API Endpoints
 | Method | Path | Purpose |
 |---|---|---|
-| POST | `/api/chat-text` | Aria text response via Emergent LLM (gpt-4.1-mini). |
-| POST | `/api/agora/start` | Start Agora Conversational AI agent; returns `{app_id, channel, rtc_token, uid, agent_id, agent_uid}`. |
-| POST | `/api/agora/stop` | Stop the Agora agent (`/agents/{id}/leave`). |
-| POST/GET | `/api/leads` | Test-drive leads CRUD. |
-| POST/GET | `/api/status` | Health check. |
+| POST | `/api/chat-text` | Aria text response via custom Anthropic endpoint with DynamoDB-backed multi-turn memory. |
+| POST | `/api/agora/start` | Start Agora Conversational AI agent. |
+| POST | `/api/agora/stop` | Stop the Agora agent. |
+| POST/GET | `/api/leads` | Test-drive leads CRUD (DynamoDB). |
+| POST/GET | `/api/status` | Health check (DynamoDB). |
 
-## Env Vars (backend/.env)
-- `AGORA_APP_ID`, `AGORA_APP_CERTIFICATE` — RTC tokens.
-- `AGORA_CUSTOMER_ID`, `AGORA_CUSTOMER_SECRET` — REST Basic auth.
-- `EMERGENT_LLM_KEY` — text chat LLM.
-- `MONGO_URL`, `DB_NAME`, `CORS_ORIGINS`.
+## Angle Viewer (2026-05-31)
+- Per-car target frames in `CarShowcase.js`:
+  - Destinator: side=12, back=27 → frontseat→12, backseat→12, trunk→27
+  - XForce: side=27, back=40 → frontseat→27, backseat→27, trunk→40
+  - Pajero Sport: side=16, back=25 → frontseat→16, backseat→16, trunk→25
+- State machine: `null → transitioning_in → playing_video → at_angle → reversing_video → null`.
+- Video element is conditionally mounted with `key={car}-{angle}` so src swaps don't trigger spurious errors.
+- Drag is disabled while an angle is active.
+- HTML5 video reverse-playback is implemented manually via `requestAnimationFrame` stepping `currentTime` backwards.
 
-## What's Been Implemented
-### 2026-02-27 — MVP, 360° spin, drag-to-rotate, multi-car selector, test-drive lead capture.
-### 2026-02-28 — D-ID virtual assistant (Aria) with talking-head video (now removed).
-### 2026-02-29 (later) — Catalog refresh: 3 Mitsubishi cars from manufacturer videos
-- Replaced all 5 prior cars (AMG GT R, Veloz, LaFerrari, Camaro, 911) with **3 spinnable Mitsubishi models**:
-  - **Mitsubishi Destinator** (60 frames, default car)
-  - **Mitsubishi XForce** (60 frames)
-  - **Mitsubishi Pajero Sport** (60 frames)
-- Frames extracted locally via `ffmpeg` from user-provided MP4 turntable videos to `/app/frontend/public/cars/{id}/frame_NN.jpg` (1280×720, JPEG q=3). **No image-gen cost.**
-- Generalized preloading from a single AMG-only loader to a per-car loader keyed by `selectedCarId`.
-- Bumped `TOTAL_FRAMES` 36 → 60 and tuned `DRAG_PIXELS_PER_FRAME` for smooth spin feel.
-- Removed D-ID entirely (env, deps, `/api/chat-with-avatar`, video rendering).
-- Added text-only Aria response (`/api/chat-text`, Emergent LLM gpt-4.1-mini).
-- Added Agora Conversational AI integration:
-  - Backend `/api/agora/start` builds RTC token (agora-token-builder) and calls `https://api.agora.io/api/conversational-ai-agent/v2/projects/{appId}/join` with preset `openai_gpt_4_1_mini,minimax_speech_2_8_turbo` (Agora-managed).
-  - Backend `/api/agora/stop` calls `…/agents/{id}/leave`.
-  - Frontend `VoicePanel.js` uses `agora-rtc-sdk-ng` to join, publish mic (AEC/ANS/AGC), subscribe to agent audio; auto-VAD handled by Agora server.
-  - Mute/unmute and hangup controls.
-- **Mode toggle** (Chat / Voice) placed on the right side of the chatbox inside the form.
-- Aria circle now renders static image only (no `<video>` anywhere).
-- Tested: 9/10 backend pass (1 fail = EMERGENT_LLM_KEY budget hit, graceful 502 fallback), 12/12 frontend pass.
+## Implemented Changes Log
+- **2026-05-31**
+  - Removed `emergentintegrations` chat path; integrated official `anthropic` AsyncClient with custom `base_url`.
+  - Multi-turn memory: prior `(role, content)` turns rehydrated from `virtual-dealer-chat-logs` (partition `session_id`, sort `created_at`).
+  - Migrated `status_checks`, `leads`, `chat_history` storage from MongoDB to DynamoDB (region from `AWS_REGION` env, credentials from `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`).
+  - Created `bootstrap_dynamo.py` (run at server start) — idempotent table creation.
+  - Added 3 angle buttons (Lucide: `Armchair`, `Sofa`, `PackageOpen`) at bottom-right + `Back` button.
+  - Re-encoded 4 user-supplied `.mov` videos to H.264 MP4 for browser compatibility.
+  - Fixed video onError to only fire on real `MediaError.code` (skip false-positive aborts on src swap).
+  - Conditionally mount `<video>` element + `key` per angle to prevent in-flight load aborts.
 
-## Backlog
-### P1
-- Live transcript of voice conversation in the UI (Agora data channel events).
-- Persist voice transcripts to MongoDB for later review.
-- Smarter "Aria is speaking" pulse — animate per-word, not just volume.
+## Verified End-to-End (real Google Chrome, 2026-05-31)
+- ✅ Destinator → Frontseat → frame 12, video plays full 3.96s, pauses on last frame, no error overlay.
+- ✅ Switch Frontseat → Trunk: reverses, transitions to frame 27, plays trunk MP4.
+- ✅ Back button: reverses video, unmounts video element, returns to 360° view (drag re-enabled).
+- ✅ Destinator → Backseat → frame 12.
+- ✅ Switching car (→ Pajero) preloads frames, then Trunk → frame 25.
+- ✅ DynamoDB chat: turn 1 + turn 2 with same session_id — Aria recalls previous question.
+- ✅ DynamoDB leads: POST returns full lead with UUID, GET returns sorted list.
 
-### P2
-- 360° spin sequences for more cars.
-- Color/trim selection, zoom, auto-rotate toggle.
-- Multi-language Aria (switch ASR language + MiniMax voice).
+## Backlog / Future
+- **P2** — Optionally swap Agora voice agent's built-in `openai_gpt_4_1_mini` for the custom Anthropic endpoint (user previously skipped this question).
+- **P2** — Add GSI on `virtual-dealer-leads.created_at` for native sort when lead volume grows.
+- **P2** — Add TTL on `virtual-dealer-chat-logs` (e.g., 30 days) to auto-prune sessions.
+- **P2** — Pre-compute reversed MP4s and switch to swapping `src` instead of rAF-stepping `currentTime` (smoother on long videos / mobile).
 
-## Tech Stack
-- React 19, Tailwind via shadcn (not heavily used here), `lucide-react`.
-- `agora-rtc-sdk-ng@4.24.4` (frontend), `agora-token-builder==1.0.0` (backend).
-- FastAPI, Motor (MongoDB), `httpx`, `emergentintegrations`.
+## Test Environment Note
+Playwright's bundled Chromium (HeadlessChrome) does **not** include H.264 codec, so any automated test that loads angle MP4s will report `DEMUXER_ERROR_NO_SUPPORTED_STREAMS`. This is **not** a product bug — verified working in real Google Chrome via Playwright's `executable_path="/usr/bin/google-chrome"`. Use that path for any future video flow tests.
