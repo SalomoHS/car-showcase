@@ -12,7 +12,7 @@ from typing import List, Optional
 import uuid
 from datetime import datetime, timezone
 import httpx
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+from anthropic import AsyncAnthropic
 from agora_token_builder import RtcTokenBuilder
 
 
@@ -119,8 +119,26 @@ async def list_leads():
     return leads
 
 
-# ──────────────────── ARIA — TEXT CHAT (Emergent LLM) ────────────────────
-EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY')
+# ──────────────────── ARIA — TEXT CHAT (Custom Anthropic Endpoint) ────────────────────
+EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY')  # legacy, kept for compatibility
+ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY')
+MODEL_ENDPOINT = os.environ.get('MODEL_ENDPOINT')
+MODEL_ID = os.environ.get('MODEL_ID', 'claude-sonnet-4.6')
+
+# Lazy-initialized Anthropic client targeting the custom endpoint
+_anthropic_client: Optional[AsyncAnthropic] = None
+
+
+def get_anthropic_client() -> AsyncAnthropic:
+    global _anthropic_client
+    if _anthropic_client is None:
+        if not ANTHROPIC_API_KEY:
+            raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not configured")
+        kwargs = {"api_key": ANTHROPIC_API_KEY}
+        if MODEL_ENDPOINT:
+            kwargs["base_url"] = MODEL_ENDPOINT
+        _anthropic_client = AsyncAnthropic(**kwargs)
+    return _anthropic_client
 
 ARIA_SYSTEM_PROMPT_TMPL = (
     "You are Aria, a friendly and knowledgeable luxury car sales specialist. "
@@ -148,8 +166,6 @@ class ChatTextResponse(BaseModel):
 async def chat_text(payload: ChatTextRequest):
     if not payload.message.strip():
         raise HTTPException(status_code=400, detail="message cannot be empty")
-    if not EMERGENT_LLM_KEY:
-        raise HTTPException(status_code=500, detail="EMERGENT_LLM_KEY not configured")
 
     session_id = payload.session_id or f"car-{payload.car_id}-{uuid.uuid4().hex[:8]}"
     system_prompt = ARIA_SYSTEM_PROMPT_TMPL.format(
@@ -157,17 +173,42 @@ async def chat_text(payload: ChatTextRequest):
         car_tagline=payload.car_tagline or '',
     )
 
+    # Load prior turns for this session to maintain conversational memory
+    prior = await db.chat_messages.find(
+        {"session_id": session_id, "mode": "text"},
+        {"_id": 0, "user_message": 1, "ai_response": 1, "created_at": 1},
+    ).sort("created_at", 1).to_list(20)
+
+    messages = []
+    for turn in prior:
+        if turn.get("user_message"):
+            messages.append({"role": "user", "content": turn["user_message"]})
+        if turn.get("ai_response"):
+            messages.append({"role": "assistant", "content": turn["ai_response"]})
+    messages.append({"role": "user", "content": payload.message})
+
     try:
-        chat = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
-            session_id=session_id,
-            system_message=system_prompt,
-        ).with_model("openai", "gpt-4.1-mini")
-        response = await chat.send_message(UserMessage(text=payload.message))
-        text = response.strip()
+        client = get_anthropic_client()
+        resp = await client.messages.create(
+            model=MODEL_ID,
+            max_tokens=512,
+            system=system_prompt,
+            messages=messages,
+        )
+        # Concatenate text blocks from the response
+        parts = []
+        for block in resp.content or []:
+            block_type = getattr(block, "type", None) or (block.get("type") if isinstance(block, dict) else None)
+            if block_type == "text":
+                parts.append(getattr(block, "text", None) or (block.get("text") if isinstance(block, dict) else ""))
+        text = ("".join(parts)).strip()
+        if not text:
+            raise ValueError("Empty response from model")
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("LLM call failed")
-        raise HTTPException(status_code=502, detail=f"LLM error: {str(e)[:160]}")
+        raise HTTPException(status_code=502, detail=f"LLM error: {str(e)[:200]}")
 
     await db.chat_messages.insert_one({
         "id": str(uuid.uuid4()),
@@ -177,6 +218,7 @@ async def chat_text(payload: ChatTextRequest):
         "user_message": payload.message,
         "ai_response": text,
         "mode": "text",
+        "model": MODEL_ID,
         "created_at": datetime.now(timezone.utc).isoformat(),
     })
 
