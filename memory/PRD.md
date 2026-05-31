@@ -56,6 +56,9 @@
   - Re-encoded 4 user-supplied `.mov` videos to H.264 MP4 for browser compatibility.
   - Fixed video onError to only fire on real `MediaError.code` (skip false-positive aborts on src swap).
   - Conditionally mount `<video>` element + `key` per angle to prevent in-flight load aborts.
+  - **Converted all 9 MP4 angle videos to JPG image sequences** (12 fps, 960px wide, JPG q=6). 9 folders under `public/cars/views/{car}_{angle}/frame_NNN.jpg`. Frame counts in `ANGLE_FRAME_COUNTS` map (also written to `public/cars/views/manifest.json`). Total ~21 MB across all angles (similar to MP4 total) but per-angle lazy-loaded with progress indicator, no codec dependency.
+  - Replaced `<video>` element with `<img>` displaying current sequence frame; replaced `reverseVideoToStart` with `reverseSequenceToStart` (rAF stepping `angleFrameIdx` backwards). Added `playSequenceForward` (rAF stepping forward).
+  - Added per-angle preload with progress bar (`angle-loading`). Removed obsolete `angle-video-error*` CSS rules.
 
 ## Verified End-to-End (real Google Chrome, 2026-05-31)
 - ✅ Destinator → Frontseat → frame 12, video plays full 3.96s, pauses on last frame, no error overlay.
@@ -73,4 +76,4 @@
 - **P2** — Pre-compute reversed MP4s and switch to swapping `src` instead of rAF-stepping `currentTime` (smoother on long videos / mobile).
 
 ## Test Environment Note
-Playwright's bundled Chromium (HeadlessChrome) does **not** include H.264 codec, so any automated test that loads angle MP4s will report `DEMUXER_ERROR_NO_SUPPORTED_STREAMS`. This is **not** a product bug — verified working in real Google Chrome via Playwright's `executable_path="/usr/bin/google-chrome"`. Use that path for any future video flow tests.
+- Per-angle assets are now image sequences (no codec dependency). Works identically in Playwright bundled Chromium and in real Google Chrome — no `executable_path` workaround needed.

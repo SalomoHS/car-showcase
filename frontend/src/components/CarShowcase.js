@@ -64,6 +64,30 @@ const HALF = TOTAL_FRAMES / 2;
 const DRAG_PIXELS_PER_FRAME = 11;
 const mod = (n, m) => ((n % m) + m) % m;
 
+// ──────────────────── ANGLE SEQUENCE DATA ────────────────────
+// Frame counts for each car_angle sequence (mirrors public/cars/views/manifest.json).
+// Encoded at 12fps so playback rate = 12 frames/sec.
+const ANGLE_FRAME_COUNTS = {
+  destinator_frontseat: 48,
+  destinator_backseat: 61,
+  destinator_trunk: 106,
+  pajero_frontseat: 61,
+  pajero_backseat: 61,
+  pajero_trunk: 116,
+  xforce_frontseat: 61,
+  xforce_backseat: 61,
+  xforce_trunk: 119,
+};
+const ANGLE_FPS = 12;
+
+const buildAngleSequence = (carId, angle) => {
+  const key = `${carId}_${angle}`;
+  const count = ANGLE_FRAME_COUNTS[key] || 0;
+  return Array.from({ length: count }, (_, i) =>
+    `/cars/views/${key}/frame_${String(i + 1).padStart(3, '0')}.jpg`
+  );
+};
+
 // ──────────────────── COMPONENT ────────────────────
 const CarShowcase = () => {
   const [selectedCarId, setSelectedCarId] = useState(CARS[0].id);
@@ -90,16 +114,18 @@ const CarShowcase = () => {
   // ──────────────── Angle viewer state ────────────────
   // null = inactive (normal 360° view)
   // 'transitioning_in'  = animating 360° toward the start frame
-  // 'playing_video'     = mp4 playing forward
-  // 'at_angle'          = paused at last video frame, user is viewing the angle
-  // 'reversing_video'   = playing mp4 in reverse to return to start frame
+  // 'playing_video'     = sequence playing forward
+  // 'at_angle'          = paused at last sequence frame, user is viewing the angle
+  // 'reversing_video'   = sequence playing in reverse to return to first frame
   const [angleState, setAngleState] = useState(null);
   const [activeAngle, setActiveAngle] = useState(null);   // 'frontseat' | 'backseat' | 'trunk' | null
-  const [pendingAngle, setPendingAngle] = useState(null); // angle to switch to after reversing the current one
-  const [videoError, setVideoError] = useState(false);
-  const videoRef = useRef(null);
-  const transitionAnimRef = useRef(null);   // requestAnimationFrame handle for frame-to-frame transition
-  const reverseAnimRef = useRef(null);      // requestAnimationFrame handle for reverse-playback
+  const [angleFrameIdx, setAngleFrameIdx] = useState(0);  // 0-indexed frame within the active sequence
+  const [angleLoading, setAngleLoading] = useState(false); // true while preloading sequence
+  const [angleLoadProgress, setAngleLoadProgress] = useState(0); // 0..100
+  const transitionAnimRef = useRef(null);   // requestAnimationFrame handle for 360° frame-to-frame transition
+  const playAnimRef = useRef(null);         // requestAnimationFrame handle for sequence forward playback
+  const reverseAnimRef = useRef(null);      // requestAnimationFrame handle for sequence reverse playback
+  const angleImagesRef = useRef([]);        // preloaded Image objects keyed by sequence index
 
   const selectedCar = CARS.find((c) => c.id === selectedCarId);
   const currentIdx = CARS.findIndex((c) => c.id === selectedCarId);
@@ -194,28 +220,78 @@ const CarShowcase = () => {
     transitionAnimRef.current = requestAnimationFrame(tick);
   }, []);
 
-  // Reverse-play the angle video back to currentTime = 0, then call onDone.
-  const reverseVideoToStart = useCallback((onDone) => {
-    const v = videoRef.current;
-    if (!v || !v.duration || isNaN(v.duration)) { onDone && onDone(); return; }
-    if (reverseAnimRef.current) cancelAnimationFrame(reverseAnimRef.current);
+  // Preload all frames in an angle sequence. Resolves once all frames are loaded
+  // (or errored). Calls onProgress(percent) as each frame finishes.
+  const preloadAngleSequence = useCallback((carId, angle, onProgress) => {
+    return new Promise((resolve) => {
+      const urls = buildAngleSequence(carId, angle);
+      if (urls.length === 0) { resolve([]); return; }
+      const imgs = [];
+      let done = 0;
+      urls.forEach((url, idx) => {
+        const img = new Image();
+        img.src = url;
+        const onDone = () => {
+          done += 1;
+          onProgress && onProgress(Math.round((done / urls.length) * 100));
+          if (done === urls.length) resolve(imgs);
+        };
+        img.onload = onDone;
+        img.onerror = onDone;
+        imgs[idx] = img;
+      });
+    });
+  }, []);
 
-    // Match the forward playback speed (1 second of video reversed in 1 second).
-    const SPEED = 1.0;
+  // Play the active angle sequence forward at ANGLE_FPS, then settle on the last frame.
+  const playSequenceForward = useCallback((totalFrames, onDone) => {
+    if (playAnimRef.current) cancelAnimationFrame(playAnimRef.current);
+    if (totalFrames === 0) { onDone && onDone(); return; }
     let last = performance.now();
-    try { v.pause(); } catch (_) {}
-
+    let accum = 0;
+    let idx = 0;
+    setAngleFrameIdx(0);
     const tick = (now) => {
       const dt = (now - last) / 1000;
       last = now;
-      const next = (v.currentTime || 0) - dt * SPEED;
-      if (next <= 0.02) {
-        try { v.currentTime = 0; } catch (_) {}
+      accum += dt * ANGLE_FPS;
+      while (accum >= 1 && idx < totalFrames - 1) {
+        idx += 1;
+        accum -= 1;
+      }
+      setAngleFrameIdx(idx);
+      if (idx >= totalFrames - 1) {
+        playAnimRef.current = null;
+        onDone && onDone();
+        return;
+      }
+      playAnimRef.current = requestAnimationFrame(tick);
+    };
+    playAnimRef.current = requestAnimationFrame(tick);
+  }, []);
+
+  // Reverse-play the active angle sequence back to the first frame, then call onDone.
+  const reverseSequenceToStart = useCallback((onDone) => {
+    if (reverseAnimRef.current) cancelAnimationFrame(reverseAnimRef.current);
+    if (playAnimRef.current) { cancelAnimationFrame(playAnimRef.current); playAnimRef.current = null; }
+    let last = performance.now();
+    let accum = 0;
+    const tick = (now) => {
+      const dt = (now - last) / 1000;
+      last = now;
+      accum += dt * ANGLE_FPS;
+      let stop = false;
+      setAngleFrameIdx((cur) => {
+        let next = cur;
+        while (accum >= 1 && next > 0) { next -= 1; accum -= 1; }
+        if (next <= 0) stop = true;
+        return next;
+      });
+      if (stop) {
         reverseAnimRef.current = null;
         onDone && onDone();
         return;
       }
-      try { v.currentTime = next; } catch (_) {}
       reverseAnimRef.current = requestAnimationFrame(tick);
     };
     reverseAnimRef.current = requestAnimationFrame(tick);
@@ -231,47 +307,36 @@ const CarShowcase = () => {
 
   // Internal: actually begin the transition into an angle (assumes nothing playing)
   const enterAngle = useCallback((angle) => {
-    setVideoError(false);
     setActiveAngle(angle);
     setAngleState('transitioning_in');
+    setAngleFrameIdx(0);
     const target = startFrameFor(angle);
+    const totalFrames = ANGLE_FRAME_COUNTS[`${selectedCar.id}_${angle}`] || 0;
+    // Kick off sequence preload in parallel with 360° transition.
+    setAngleLoading(true);
+    setAngleLoadProgress(0);
+    const preloadPromise = preloadAngleSequence(selectedCar.id, angle, (p) => setAngleLoadProgress(p))
+      .then((imgs) => { angleImagesRef.current = imgs; });
+
     animateToFrame(target, () => {
-      // Play the video for this angle
-      const v = videoRef.current;
-      if (!v) { setAngleState('at_angle'); return; }
-      try {
-        v.currentTime = 0;
-        const p = v.play();
-        if (p && typeof p.then === 'function') {
-          p.then(() => setAngleState('playing_video'))
-           .catch(() => { setVideoError(true); setAngleState('at_angle'); });
-        } else {
-          setAngleState('playing_video');
-        }
-      } catch (_) {
-        setVideoError(true);
-        setAngleState('at_angle');
-      }
+      // Wait for preload to finish before starting forward playback.
+      preloadPromise.then(() => {
+        setAngleLoading(false);
+        if (totalFrames === 0) { setAngleState('at_angle'); return; }
+        setAngleState('playing_video');
+        playSequenceForward(totalFrames, () => setAngleState('at_angle'));
+      });
     });
-  }, [animateToFrame, selectedCar]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [animateToFrame, selectedCar, preloadAngleSequence, playSequenceForward]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Public: handle "Frontseat" / "Backseat" / "Trunk" button click
   const handleAngleClick = (angle) => {
     if (showLoading) return;
-    // If we're already at this angle, do nothing
     if (activeAngle === angle && (angleState === 'at_angle' || angleState === 'playing_video')) return;
-
-    // If currently inactive → just enter
     if (!activeAngle) { enterAngle(angle); return; }
-
-    // Otherwise: reverse current angle first, then switch
-    setPendingAngle(angle);
+    // Reverse current angle's sequence first, then enter the new angle.
     setAngleState('reversing_video');
-    reverseVideoToStart(() => {
-      // pendingAngle is captured via state below; we use a fresh closure on the next tick
-      // but we can just call enterAngle(angle) directly since `angle` is in scope.
-      setPendingAngle(null);
-      // If user toggled the SAME angle again during reverse, ignore re-trigger
+    reverseSequenceToStart(() => {
       enterAngle(angle);
     });
   };
@@ -279,12 +344,12 @@ const CarShowcase = () => {
   // Public: close the angle viewer and return to 360° (staying at start frame)
   const handleAngleClose = () => {
     if (!activeAngle) return;
-    setPendingAngle(null);
     setAngleState('reversing_video');
-    reverseVideoToStart(() => {
+    reverseSequenceToStart(() => {
       setActiveAngle(null);
       setAngleState(null);
-      setVideoError(false);
+      setAngleFrameIdx(0);
+      angleImagesRef.current = [];
     });
   };
 
@@ -292,6 +357,7 @@ const CarShowcase = () => {
   useEffect(() => {
     return () => {
       if (transitionAnimRef.current) cancelAnimationFrame(transitionAnimRef.current);
+      if (playAnimRef.current) cancelAnimationFrame(playAnimRef.current);
       if (reverseAnimRef.current) cancelAnimationFrame(reverseAnimRef.current);
     };
   }, []);
@@ -299,11 +365,13 @@ const CarShowcase = () => {
   // Reset angle viewer state on car switch
   useEffect(() => {
     if (transitionAnimRef.current) cancelAnimationFrame(transitionAnimRef.current);
+    if (playAnimRef.current) cancelAnimationFrame(playAnimRef.current);
     if (reverseAnimRef.current) cancelAnimationFrame(reverseAnimRef.current);
     setActiveAngle(null);
     setAngleState(null);
-    setPendingAngle(null);
-    setVideoError(false);
+    setAngleFrameIdx(0);
+    setAngleLoading(false);
+    angleImagesRef.current = [];
   }, [selectedCarId]);
 
   // ──────────────── Drag handlers (only when spin enabled) ────────────────
@@ -432,32 +500,22 @@ const CarShowcase = () => {
                 decoding="sync"
               />
             ))}
-            {/* Angle video overlay — only mounted while an angle is active so src swaps don't abort. */}
-            {activeAngle && (
-              <video
-                key={`${selectedCar.id}-${activeAngle}`}
-                ref={videoRef}
+            {/* Angle image sequence overlay — only mounted while an angle is active. */}
+            {activeAngle && !angleLoading && (
+              <img
                 className={`angle-video ${(angleState === 'playing_video' || angleState === 'at_angle' || angleState === 'reversing_video') ? 'visible' : ''}`}
-                src={`/cars/views/${selectedCar.id}_${activeAngle}.mp4`}
-                playsInline
-                muted
-                preload="auto"
-                onEnded={() => setAngleState('at_angle')}
-                onError={(e) => {
-                  // Only treat as failure when the media element reports an actual error code
-                  const err = e?.currentTarget?.error;
-                  if (err && err.code) {
-                    setVideoError(true);
-                    setAngleState('at_angle');
-                  }
-                }}
+                src={`/cars/views/${selectedCar.id}_${activeAngle}/frame_${String(angleFrameIdx + 1).padStart(3, '0')}.jpg`}
+                alt=""
+                draggable={false}
+                decoding="sync"
                 data-testid="angle-video"
               />
             )}
-            {videoError && activeAngle && (
-              <div className="angle-video-error" data-testid="angle-video-error">
-                <div className="angle-video-error-title">Video not available yet</div>
-                <div className="angle-video-error-sub">Drop <code>{selectedCar.id}_{activeAngle}.mp4</code> into <code>/public/cars/views/</code></div>
+            {activeAngle && angleLoading && (
+              <div className="angle-loading" data-testid="angle-loading">
+                <div className="loading-label">Loading {activeAngle.replace('seat',' seat')} view</div>
+                <div className="loading-bar"><div className="loading-bar-fill" style={{ width: `${angleLoadProgress}%` }} /></div>
+                <div className="loading-percent">{angleLoadProgress}%</div>
               </div>
             )}
           </div>
