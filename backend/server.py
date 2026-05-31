@@ -157,42 +157,86 @@ ARIA_SYSTEM_PROMPT_TMPL = (
     "Answer their question in 2-3 short sentences with a warm, conversational tone. "
     "Be specific about the car when relevant, and gently encourage interest without being pushy. "
     "Never mention you are an AI; speak as Aria the sales specialist.\n\n"
-    "── ANGLE CONTROL ──\n"
-    "ALWAYS start every reply with a tag in this exact format on its own:\n"
-    "  [[angle:VALUE]]\n"
-    "where VALUE is one of: frontseat, backseat, trunk, none.\n"
-    "Choose the angle based on the TOPIC of the question — regardless of whether you "
-    "know the specific answer or have to defer:\n"
+    "── CONTROL TAGS ──\n"
+    "Begin EVERY reply with two tags on the very first line, in this exact order:\n"
+    "  [[angle:ANGLE_VALUE]] [[car:CAR_VALUE]]\n"
+    "Then a newline, then your normal reply text.\n"
+    "\n"
+    "ANGLE_VALUE ∈ frontseat | backseat | trunk | none\n"
     "  - frontseat → dashboard, steering wheel, driver controls, infotainment, climate, "
     "front cabin, front seats, instrument cluster, sunroof, audio system\n"
     "  - backseat  → rear cabin, rear passenger space, second/third-row legroom, "
     "rear AC vents, child seats, rear entertainment\n"
-    "  - trunk     → cargo area, boot, luggage space, rear cargo capacity (in liters), "
-    "load capacity, tailgate, roof rails for cargo\n"
-    "  - none      → anything else (exterior styling, engine, price, warranty, fuel "
-    "economy, drivetrain, safety, general questions, greetings)\n"
-    "Emit the tag exactly once at the very start, then continue with your normal reply text.\n"
-    "Never speak the tag aloud or describe it — it is silently consumed by the UI."
+    "  - trunk     → cargo area, boot, luggage space, rear cargo capacity, tailgate\n"
+    "  - none      → anything else (exterior, engine, price, warranty, fuel economy, "
+    "drivetrain, safety, general questions, greetings)\n"
+    "Pick by TOPIC of the question regardless of whether you know the answer.\n"
+    "\n"
+    "CAR_VALUE ∈ destinator | xforce | pajero | none\n"
+    "  - destinator → Mitsubishi Destinator (compact SUV, family-friendly, urban + light off-road)\n"
+    "  - xforce     → Mitsubishi XForce (sub-compact crossover, stylish, daily commute, "
+    "young drivers, fuel-efficient)\n"
+    "  - pajero     → Mitsubishi Pajero Sport (mid-size SUV, rugged, serious off-road, "
+    "towing, adventure, large family)\n"
+    "  - none       → reply is generic OR the user did not ask for a recommendation\n"
+    "Emit a SPECIFIC car value (not `none`) ONLY when the user is asking for a "
+    "recommendation, comparing models, or describing a use-case (e.g. \"car for off-road\", "
+    "\"daily commute\", \"family car\", \"which is best for…\"). For ordinary questions "
+    "about the currently displayed car, output `[[car:none]]`.\n"
+    "\n"
+    "Examples:\n"
+    "  Q: \"How big is the cargo space?\"   → [[angle:trunk]] [[car:none]]\n"
+    "  Q: \"What car is good for off-road?\" → [[angle:none]] [[car:pajero]]\n"
+    "  Q: \"Tell me about the dashboard\"   → [[angle:frontseat]] [[car:none]]\n"
+    "  Q: \"I need a car for daily commute\" → [[angle:none]] [[car:xforce]]\n"
+    "\n"
+    "Never speak the tags aloud or describe them — they are silently consumed by the UI."
 )
 
 # Sentinel parser
-_ANGLE_RE = __import__('re').compile(r"^\s*\[\[angle:(frontseat|backseat|trunk|none)\]\]\s*", __import__('re').IGNORECASE)
+_re_module = __import__('re')
+_ANGLE_RE = _re_module.compile(r"^\s*\[\[angle:(frontseat|backseat|trunk|none)\]\]\s*", _re_module.IGNORECASE)
+_CAR_RE = _re_module.compile(r"^\s*\[\[car:(destinator|xforce|pajero|none)\]\]\s*", _re_module.IGNORECASE)
+# Combined regex matches both tags in either order at the start of the reply.
+_TAGS_PREFIX_RE = _re_module.compile(
+    r"^\s*(?:\[\[(?:angle|car):[a-z]+\]\]\s*){0,2}",
+    _re_module.IGNORECASE,
+)
+
+
+def parse_control_tags(text: str):
+    """Extract [[angle:X]] and [[car:Y]] tags from the start of an LLM reply.
+
+    Returns (angle_or_none, car_or_none, cleaned_text). Either tag may appear
+    first; both are optional and stripped from the visible text.
+    """
+    if not text:
+        return None, None, text or ""
+    # Pull each tag independently regardless of order
+    work = text.lstrip()
+    angle = None
+    car = None
+    for _ in range(2):
+        m = _ANGLE_RE.match(work)
+        if m:
+            v = m.group(1).lower()
+            angle = None if v == 'none' else v
+            work = work[m.end():].lstrip()
+            continue
+        m = _CAR_RE.match(work)
+        if m:
+            v = m.group(1).lower()
+            car = None if v == 'none' else v
+            work = work[m.end():].lstrip()
+            continue
+        break
+    return angle, car, work
 
 
 def parse_angle_tag(text: str):
-    """Extract [[angle:X]] tag from the start of an LLM reply.
-
-    Returns (angle_or_none, cleaned_text). `angle_or_none` is one of
-    'frontseat'|'backseat'|'trunk' (lower-case) or None if absent / 'none'.
-    """
-    if not text:
-        return None, text or ""
-    m = _ANGLE_RE.match(text)
-    if not m:
-        return None, text
-    angle = m.group(1).lower()
-    cleaned = text[m.end():].lstrip()
-    return (None if angle == 'none' else angle), cleaned
+    """Back-compat shim used by the streaming proxy where the sentinel may straddle chunks."""
+    angle, _, cleaned = parse_control_tags(text)
+    return angle, cleaned
 
 
 class ChatTextRequest(BaseModel):
@@ -207,6 +251,7 @@ class ChatTextResponse(BaseModel):
     text: str
     session_id: str
     angle: Optional[str] = None
+    car: Optional[str] = None
     used_rag: bool = False
 
 
@@ -285,8 +330,8 @@ async def chat_text(payload: ChatTextRequest):
         logger.exception("LLM call failed")
         raise HTTPException(status_code=502, detail=f"LLM error: {str(e)[:200]}")
 
-    # Step 4: parse the angle sentinel and strip it from the visible text
-    angle, text = parse_angle_tag(raw_text)
+    # Step 4: parse the control sentinels and strip them from the visible text
+    angle, car, text = parse_control_tags(raw_text)
 
     await ddb.put_item(T_CHAT, {
         "session_id": session_id,
@@ -297,13 +342,14 @@ async def chat_text(payload: ChatTextRequest):
         "user_message": payload.message,
         "ai_response": text,
         "angle": angle,
+        "recommended_car": car,
         "used_rag": used_rag,
         "mode": "text",
         "model": MODEL_ID,
         "expires_at": _chat_expires_at(),
     })
 
-    return ChatTextResponse(text=text, session_id=session_id, angle=angle, used_rag=used_rag)
+    return ChatTextResponse(text=text, session_id=session_id, angle=angle, car=car, used_rag=used_rag)
 
 
 # ──────────────────── OPENAI-COMPATIBLE PROXY FOR AGORA CUSTOM LLM ────────────────────
@@ -466,9 +512,11 @@ async def llm_proxy_chat_completions(payload: OpenAIChatRequest, request: Reques
             created = int(time.time())
             assistant_buf: List[str] = []
             angle_value: Optional[str] = None
+            car_value: Optional[str] = None
             pending = ""
             sentinel_resolved = False
-            SENTINEL_PEEK = 32
+            # Two tags may appear (≤ ~32 chars each). Wait for ~80 chars before giving up.
+            SENTINEL_PEEK = 80
 
             def make_chunk(text_delta: str, role_first: bool) -> dict:
                 return {
@@ -509,23 +557,35 @@ async def llm_proxy_chat_completions(payload: OpenAIChatRequest, request: Reques
                             continue
                         if not sentinel_resolved:
                             pending += delta
-                            m = _ANGLE_RE.match(pending)
-                            if m:
-                                a = m.group(1).lower()
-                                angle_value = None if a == 'none' else a
-                                remaining = pending[m.end():].lstrip()
+                            # Try to parse BOTH control tags from the head of the buffer.
+                            # parse_control_tags strips up to 2 tags regardless of order.
+                            a, c, cleaned = parse_control_tags(pending)
+                            # We declare the tags "resolved" when:
+                            #   • the buffer is long enough that any further tags couldn't
+                            #     fit at the start, OR
+                            #   • cleaned text appears (i.e. real content has begun), OR
+                            #   • we've passed SENTINEL_PEEK chars total.
+                            tags_done = (a is not None or c is not None) and bool(cleaned)
+                            if tags_done:
+                                angle_value = a
+                                car_value = c
                                 sentinel_resolved = True
-                                if remaining:
-                                    assistant_buf.append(remaining)
-                                    yield f"data: {_json.dumps(make_chunk(remaining, role_first))}\n\n"
+                                if cleaned:
+                                    assistant_buf.append(cleaned)
+                                    yield f"data: {_json.dumps(make_chunk(cleaned, role_first))}\n\n"
                                     role_first = False
                                 pending = ""
                                 continue
                             if len(pending) >= SENTINEL_PEEK:
+                                # Best-effort: capture whatever tags we found, flush remainder.
+                                angle_value = a
+                                car_value = c
                                 sentinel_resolved = True
-                                assistant_buf.append(pending)
-                                yield f"data: {_json.dumps(make_chunk(pending, role_first))}\n\n"
-                                role_first = False
+                                flush = cleaned if (a is not None or c is not None) else pending
+                                if flush:
+                                    assistant_buf.append(flush)
+                                    yield f"data: {_json.dumps(make_chunk(flush, role_first))}\n\n"
+                                    role_first = False
                                 pending = ""
                             continue
                         # Sentinel already handled — pass-through
