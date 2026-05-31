@@ -3,7 +3,7 @@
 Creates these tables if they do not exist:
   - virtual-dealer-status-checks  (PK: id)
   - virtual-dealer-leads          (PK: id)
-  - virtual-dealer-chat-logs      (PK: session_id, SK: created_at)
+  - virtual-dealer-chat-logs      (PK: session_id, SK: created_at, TTL on `expires_at`)
 
 Uses PAY_PER_REQUEST billing so there is no provisioned capacity to manage.
 
@@ -54,6 +54,11 @@ TABLE_SPECS = [
     },
 ]
 
+# Tables that should have a TTL enabled. Attribute name must match what server.py writes.
+TTL_SPECS = {
+    T_CHAT: "expires_at",
+}
+
 
 async def ensure_tables() -> None:
     session = aioboto3.Session()
@@ -89,6 +94,29 @@ async def ensure_tables() -> None:
                     break
                 print(f"[wait]  {name} status={status}")
                 await asyncio.sleep(2)
+
+        # Enable TTL where requested (idempotent)
+        for table_name, ttl_attr in TTL_SPECS.items():
+            try:
+                desc = await ddb.describe_time_to_live(TableName=table_name)
+                cur = desc.get("TimeToLiveDescription", {}) or {}
+                cur_status = cur.get("TimeToLiveStatus")
+                cur_attr = cur.get("AttributeName")
+                if cur_status in ("ENABLED", "ENABLING") and cur_attr == ttl_attr:
+                    print(f"[ok]   TTL already enabled on {table_name} (attr={cur_attr})")
+                    continue
+                await ddb.update_time_to_live(
+                    TableName=table_name,
+                    TimeToLiveSpecification={"Enabled": True, "AttributeName": ttl_attr},
+                )
+                print(f"[new]  TTL enabled on {table_name} (attr={ttl_attr})")
+            except ClientError as e:
+                code = e.response.get("Error", {}).get("Code")
+                # AWS throttles TTL updates to once per hour per table — treat as ok.
+                if code in ("ValidationException",):
+                    print(f"[warn] TTL update skipped on {table_name}: {e.response['Error'].get('Message')}")
+                else:
+                    raise
 
 
 if __name__ == "__main__":

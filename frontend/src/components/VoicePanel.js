@@ -15,7 +15,7 @@ const PRESENTER_IMAGE =
  *   3. Subscribe to remote audio (Aria) → autoplay
  *   4. On close → unpublish, leave, POST /api/agora/stop
  */
-const VoicePanel = ({ car, onClose }) => {
+const VoicePanel = ({ car, sessionId, onSessionId, onClose }) => {
   const [status, setStatus] = useState('connecting'); // connecting | live | error
   const [errorMsg, setErrorMsg] = useState('');
   const [micMuted, setMicMuted] = useState(false);
@@ -39,11 +39,15 @@ const VoicePanel = ({ car, onClose }) => {
             car_id: car.id,
             car_name: `${car.brand} ${car.model}`,
             car_tagline: car.tagline || '',
+            session_id: sessionId || null,
           },
           { timeout: 30000 }
         );
         if (cancelled) return;
         agentIdRef.current = data.agent_id;
+        // Surface the (possibly newly generated) session_id back to the parent so
+        // voice + text share one transcript when the user switches modes.
+        if (data.session_id && onSessionId) onSessionId(data.session_id);
 
         // 2) Join the channel as the user
         const client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });

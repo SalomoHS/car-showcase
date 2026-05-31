@@ -72,9 +72,12 @@
 
 ## Backlog / Future
 - **P2** — Add GSI on `virtual-dealer-leads.created_at` for native sort when lead volume grows.
-- **P2** — Add TTL on `virtual-dealer-chat-logs` (e.g., 30 days) to auto-prune sessions.
-- **P2** — Persist voice-mode transcripts via Agora callback hooks → log into `virtual-dealer-chat-logs` so voice and text share the same conversation history per session.
 - **P2** — Optional `chat.completion.custom_metadata` first chunk from the proxy with `interruptable: false` for filler phrases, smoother voice UX.
+
+## Recent Implementation (2026-05-31, batch 5)
+- **Custom Anthropic LLM brain for Agora voice** — Added `/api/llm-proxy/v1/chat/completions` (OpenAI Chat Completions–compatible). Translates OpenAI requests to Anthropic Messages API and streams SSE chunks. Bearer-auth via `LLM_PROXY_SECRET`. Switched Agora `/join` body from preset `openai_gpt_4_1_mini,minimax_speech_2_8_turbo` to TTS-only preset `minimax_speech_2_8_turbo` + custom `llm.url` pointing to the proxy.
+- **Voice transcripts persisted to shared chat-log table** — Frontend passes one `session_id` to both `/chat-text` and `/agora/start`. `/agora/start` forwards it via `llm.params.user`; Agora includes it as OpenAI `user` field on every LLM call; proxy persists `(user_message, assistant_response, mode='voice', expires_at)` into `virtual-dealer-chat-logs` keyed by that session_id. Result: switching from voice → text mid-session, Aria recalls what was just said by voice (verified end-to-end).
+- **DynamoDB TTL on chat-logs** — Enabled TTL attribute `expires_at` (epoch seconds, 30 days). All new text + voice turns get an `expires_at` value; DynamoDB deletes them automatically within ~48h after expiry. Bootstrap script (`bootstrap_dynamo.py`) now also enables TTL idempotently. Configurable via `CHAT_LOG_TTL_DAYS` env var.
 
 ## Test Environment Note
 - Per-angle assets are now image sequences (no codec dependency). Works identically in Playwright bundled Chromium and in real Google Chrome — no `executable_path` workaround needed.

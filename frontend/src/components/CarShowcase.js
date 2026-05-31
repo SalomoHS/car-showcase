@@ -669,6 +669,8 @@ const CarShowcase = () => {
         {mode === 'voice' && (
           <VoicePanel
             car={selectedCar}
+            sessionId={chatSessionId}
+            onSessionId={(sid) => setChatSessionId(sid)}
             onClose={() => setMode('chat')}
           />
         )}

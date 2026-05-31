@@ -29,6 +29,16 @@ app = FastAPI()
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
 
+# ──────────────────── CHAT-LOG TTL ────────────────────
+# Voice + text turns share a single conversation table. DynamoDB-side TTL is
+# enabled on the `expires_at` attribute (see bootstrap_dynamo.py). The value is
+# epoch seconds; DynamoDB deletes the item within ~48h after that time.
+CHAT_TTL_DAYS = int(os.environ.get("CHAT_LOG_TTL_DAYS", "30"))
+
+
+def _chat_expires_at() -> int:
+    return int(time.time()) + CHAT_TTL_DAYS * 86400
+
 
 # Define Models
 class StatusCheck(BaseModel):
@@ -218,6 +228,7 @@ async def chat_text(payload: ChatTextRequest):
         "ai_response": text,
         "mode": "text",
         "model": MODEL_ID,
+        "expires_at": _chat_expires_at(),
     })
 
     return ChatTextResponse(text=text, session_id=session_id)
@@ -244,6 +255,10 @@ class OpenAIChatRequest(BaseModel):
     temperature: Optional[float] = None
     top_p: Optional[float] = None
     stream: Optional[bool] = False
+    # OpenAI's "user" field — Agora forwards this from properties.llm.params.user.
+    # We piggyback on it to carry our app's session_id so voice turns can be
+    # logged into the same DynamoDB chat-log as the text turns.
+    user: Optional[str] = None
 
 
 def _flatten_openai_content(c) -> str:
@@ -298,6 +313,39 @@ def _check_proxy_auth(authorization: Optional[str]):
         raise HTTPException(status_code=403, detail="Invalid proxy token")
 
 
+def _last_user_text(messages: List[OpenAIChatMessage]) -> str:
+    """Find the most recent user-role message text in an OpenAI-format messages list."""
+    for m in reversed(messages):
+        if m.role == "user":
+            txt = _flatten_openai_content(m.content)
+            if txt:
+                return txt
+    return ""
+
+
+async def _persist_voice_turn(session_id: str, user_text: str, assistant_text: str, model: str) -> None:
+    """Write a voice-mode turn into the shared chat-log table.
+
+    Skipped silently if session_id is empty (proxy can also be used directly without a session).
+    Errors are logged but never bubble up — losing a log line must not break the live voice call.
+    """
+    if not session_id:
+        return
+    try:
+        await ddb.put_item(T_CHAT, {
+            "session_id": session_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "id": str(uuid.uuid4()),
+            "user_message": user_text or "",
+            "ai_response": assistant_text or "",
+            "mode": "voice",
+            "model": model,
+            "expires_at": _chat_expires_at(),
+        })
+    except Exception:
+        logger.exception("Failed to persist voice turn for session=%s", session_id)
+
+
 @api_router.post("/llm-proxy/v1/chat/completions")
 async def llm_proxy_chat_completions(payload: OpenAIChatRequest, request: Request):
     """OpenAI Chat Completions–compatible endpoint that proxies to the custom Anthropic endpoint.
@@ -310,6 +358,10 @@ async def llm_proxy_chat_completions(payload: OpenAIChatRequest, request: Reques
     system_prompt, anth_messages = _openai_to_anthropic(payload)
     # Pass through the model name from the proxy request, but fall back to env default.
     model = payload.model or MODEL_ID
+    # When Agora's `properties.llm.params.user` is set, it appears here as the OpenAI
+    # `user` field. We treat it as our session_id so voice + text share one transcript.
+    session_id = (payload.user or "").strip() or None
+    last_user_text = _last_user_text(payload.messages)
 
     if payload.stream:
         from fastapi.responses import StreamingResponse
@@ -318,6 +370,7 @@ async def llm_proxy_chat_completions(payload: OpenAIChatRequest, request: Reques
         async def event_stream():
             completion_id = f"chatcmpl-{uuid.uuid4().hex}"
             created = int(time.time())
+            assistant_buf: List[str] = []
             try:
                 client = get_anthropic_client()
                 kwargs = {
@@ -337,6 +390,7 @@ async def llm_proxy_chat_completions(payload: OpenAIChatRequest, request: Reques
                     async for delta in stream.text_stream:
                         if not delta:
                             continue
+                        assistant_buf.append(delta)
                         chunk = {
                             "id": completion_id,
                             "object": "chat.completion.chunk",
@@ -371,6 +425,14 @@ async def llm_proxy_chat_completions(payload: OpenAIChatRequest, request: Reques
                 err = {"error": {"message": str(e)[:300], "type": "upstream_error"}}
                 yield f"data: {_json.dumps(err)}\n\n"
                 yield "data: [DONE]\n\n"
+            finally:
+                # Persist the turn (if session_id present) — voice + text share table.
+                await _persist_voice_turn(
+                    session_id=session_id or "",
+                    user_text=last_user_text,
+                    assistant_text="".join(assistant_buf),
+                    model=model,
+                )
 
         return StreamingResponse(event_stream(), media_type="text/event-stream")
 
@@ -399,6 +461,14 @@ async def llm_proxy_chat_completions(payload: OpenAIChatRequest, request: Reques
     except Exception as e:
         logger.exception("llm-proxy non-stream failed")
         raise HTTPException(status_code=502, detail=f"LLM proxy error: {str(e)[:200]}")
+
+    # Persist the non-streaming turn too (e.g., for manual proxy testing).
+    await _persist_voice_turn(
+        session_id=session_id or "",
+        user_text=last_user_text,
+        assistant_text=text,
+        model=model,
+    )
 
     return {
         "id": f"chatcmpl-{uuid.uuid4().hex}",
@@ -444,6 +514,7 @@ class AgoraStartRequest(BaseModel):
     car_id: str
     car_name: str
     car_tagline: Optional[str] = ''
+    session_id: Optional[str] = None
 
 
 class AgoraStartResponse(BaseModel):
@@ -453,6 +524,7 @@ class AgoraStartResponse(BaseModel):
     uid: int
     agent_id: str
     agent_uid: int
+    session_id: str
 
 
 class AgoraStopRequest(BaseModel):
@@ -483,6 +555,10 @@ async def agora_start(payload: AgoraStartRequest):
         f"Hi! I'm Aria. I see you're checking out the {payload.car_name}. "
         "Ask me anything about it."
     )
+
+    # Reuse the frontend-provided session_id so voice + text share one transcript.
+    # Falls back to the same scheme used by /chat-text.
+    session_id = (payload.session_id or '').strip() or f"car-{payload.car_id}-{uuid.uuid4().hex[:8]}"
 
     agent_name = f"aria-{payload.car_id}-{suffix}"
 
@@ -529,6 +605,9 @@ async def agora_start(payload: AgoraStartRequest):
                 "params": {
                     "model": MODEL_ID,
                     "max_tokens": 512,
+                    # Smuggle our session_id through OpenAI's `user` field so the
+                    # proxy can persist this voice turn under the same key as text.
+                    "user": session_id,
                 },
             },
             "tts": {
@@ -573,6 +652,7 @@ async def agora_start(payload: AgoraStartRequest):
         uid=user_uid,
         agent_id=agent_id,
         agent_uid=agent_uid,
+        session_id=session_id,
     )
 
 
