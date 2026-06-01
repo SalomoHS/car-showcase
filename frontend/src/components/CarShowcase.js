@@ -102,7 +102,7 @@ const CarShowcase = () => {
 
   // Aria chat state (text mode)
   const [avatarStatus, setAvatarStatus] = useState('idle'); // idle | thinking
-  const [avatarText, setAvatarText] = useState('');
+  const [chatMessages, setChatMessages] = useState([]); // { role: 'user' | 'ai', text: string }
   const [chatSessionId, setChatSessionId] = useState(() => crypto.randomUUID());
 
   // Mode: 'chat' (text) | 'voice' (Agora Conversational AI)
@@ -507,7 +507,7 @@ const CarShowcase = () => {
 
     setChatValue('');
     setAvatarStatus('thinking');
-    setAvatarText('');
+    setChatMessages((prev) => [...prev, { role: 'user', text: msg }]);
 
     try {
       const { data } = await axios.post(`${API}/chat-text`, {
@@ -518,7 +518,7 @@ const CarShowcase = () => {
         session_id: chatSessionId,
       }, { timeout: 60000 });
 
-      setAvatarText(data.text || '');
+      setChatMessages((prev) => [...prev, { role: 'ai', text: data.text || '' }]);
       setChatSessionId(data.session_id || null);
       setAvatarStatus('idle');
       // Auto-trigger / auto-close angle viewer based on Aria's reply.
@@ -527,7 +527,7 @@ const CarShowcase = () => {
       handleAiCarRecommendation(data.car);
     } catch (err) {
       console.error('Chat failed', err);
-      setAvatarText("Sorry, I couldn't reach the showroom server. Please try again.");
+      setChatMessages((prev) => [...prev, { role: 'ai', text: "Sorry, I couldn't reach the showroom server. Please try again." }]);
       setAvatarStatus('idle');
     }
   };
@@ -606,12 +606,12 @@ const CarShowcase = () => {
         <span>I want Test Drive</span>
       </button>
 
-      {/* Bottom-left: subtle spin hint for AMG */}
-      {selectedCar.spinEnabled && !showLoading && (
-        <div className="spin-hint" data-testid="spin-hint">
-          <RotateCw size={12} strokeWidth={1.8} />
-          <span>Drag to rotate · 360°</span>
-        </div>
+      {/* Bottom-left: Avatar response replacing drag hint */}
+      {mode === 'chat' && !showLoading && (
+        <AvatarResponse
+          status={avatarStatus}
+          messages={chatMessages}
+        />
       )}
 
       {/* Left arrow */}
@@ -723,14 +723,6 @@ const CarShowcase = () => {
             ))}
           </div>
         </div>
-
-        {/* Aria response — text mode only */}
-        {mode === 'chat' && (
-          <AvatarResponse
-            status={avatarStatus}
-            text={avatarText}
-          />
-        )}
 
         {/* View more cars button */}
         <button
