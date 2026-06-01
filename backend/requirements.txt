@@ -134,3 +134,4 @@ websockets==16.0
 wrapt==1.17.3
 yarl==1.24.2
 zipp==4.1.0
+watchtower==3.4.0

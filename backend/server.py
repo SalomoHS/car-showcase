@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 import os
 import logging
+import sys
 import base64
 import time
 from pathlib import Path
@@ -14,28 +15,30 @@ import httpx
 from anthropic import AsyncAnthropic
 from agora_token_builder import RtcTokenBuilder
 
-# Langfuse import - use the main client
+ROOT_DIR = Path(__file__).parent
+load_dotenv(ROOT_DIR / '.env')
+
+LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO').upper()
+logging.basicConfig(
+    level=LOG_LEVEL,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+uvicorn_logger = logging.getLogger("uvicorn")
+uvicorn_logger.setLevel(LOG_LEVEL)
+uvicorn_access_logger = logging.getLogger("uvicorn.access")
+uvicorn_access_logger.setLevel(LOG_LEVEL)
+logger = logging.getLogger(__name__)
+
 try:
     from langfuse import Langfuse
     LANGFUSE_AVAILABLE = True
 except ImportError:
     LANGFUSE_AVAILABLE = False
-    logger_temp = logging.getLogger(__name__)
-    logger_temp.warning("Langfuse not installed. Install with: pip install langfuse")
+    logger.warning("Langfuse not installed. Install with: pip install langfuse")
 
 import db_dynamo as ddb
 from db_dynamo import T_STATUS, T_LEADS, T_CHAT
-
-
-ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env')
-
-# Configure logging early
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 # ──────────────────── LANGFUSE INITIALIZATION ────────────────────
 LANGFUSE_SECRET_KEY = os.environ.get('LANGFUSE_SECRET_KEY')
