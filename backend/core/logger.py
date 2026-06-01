@@ -30,6 +30,8 @@ try:
         boto3_client=boto3_client
     )
     cw_handler.addFilter(SessionIdFilter())
+    cw_formatter = logging.Formatter('[%(levelname)s] | %(asctime)s | %(name)s | %(message)s')
+    cw_handler.setFormatter(cw_formatter)
     handlers = [logging.StreamHandler(sys.stdout), cw_handler]
 except Exception as e:
     handlers = [logging.StreamHandler(sys.stdout)]
