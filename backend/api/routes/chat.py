@@ -25,7 +25,7 @@ async def chat_text(
     if not payload.message.strip():
         raise HTTPException(status_code=400, detail="message cannot be empty")
 
-    session_id = payload.session_id or f"car-{payload.car_id}-{uuid.uuid4().hex[:8]}"
+    session_id = payload.session_id or str(uuid.uuid4())
     from services.llm import ARIA_SYSTEM_PROMPT_TMPL
     base_system = ARIA_SYSTEM_PROMPT_TMPL.format(
         car_name=payload.car_name,

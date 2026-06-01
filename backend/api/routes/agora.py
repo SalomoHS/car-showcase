@@ -65,7 +65,7 @@ async def agora_start(
         logger.info("agora start: RAG not needed for car=%r", payload.car_name)
 
     greeting = f"Hi! I'm Aria. I see you're checking out the {payload.car_name}. Ask me anything about it."
-    session_id = (payload.session_id or '').strip() or f"car-{payload.car_id}-{uuid.uuid4().hex[:8]}"
+    session_id = (payload.session_id or '').strip() or str(uuid.uuid4())
     agent_name = f"aria-{payload.car_id}-{suffix}"
 
     backend_public_url = settings.PUBLIC_BACKEND_URL or settings.REACT_APP_BACKEND_URL or ''
@@ -96,8 +96,8 @@ async def agora_start(
             "idle_timeout": 120,
             "asr": {"language": "en-US"},
             "llm": {
-                "url": llm_proxy_url,
-                "api_key": settings.LLM_PROXY_SECRET,
+                # "url": llm_proxy_url,
+                # "api_key": settings.LLM_PROXY_SECRET,
                 "system_messages": [{"role": "system", "content": system_prompt}],
                 "greeting_message": greeting,
                 "failure_message": "Sorry, one moment while I reconnect.",
@@ -105,7 +105,7 @@ async def agora_start(
                 "input_modalities": ["text"],
                 "output_modalities": ["text"],
                 "params": {
-                    "model": settings.MODEL_ID,
+                    "model": "gpt-4o-mini",
                     "max_tokens": 512,
                     "user": session_id,
                 },

@@ -103,7 +103,7 @@ const CarShowcase = () => {
   // Aria chat state (text mode)
   const [avatarStatus, setAvatarStatus] = useState('idle'); // idle | thinking
   const [avatarText, setAvatarText] = useState('');
-  const [chatSessionId, setChatSessionId] = useState(null);
+  const [chatSessionId, setChatSessionId] = useState(() => crypto.randomUUID());
 
   // Mode: 'chat' (text) | 'voice' (Agora Conversational AI)
   const [mode, setMode] = useState('chat');
@@ -168,7 +168,7 @@ const CarShowcase = () => {
     // Reset avatar conversation when switching cars
     setAvatarText('');
     setAvatarStatus('idle');
-    setChatSessionId(null);
+    setChatSessionId(crypto.randomUUID());
     // Also drop out of voice mode so a fresh session is created for the new car
     setMode('chat');
   }, [selectedCarId]);
