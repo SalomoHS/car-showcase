@@ -94,8 +94,24 @@ class LLMService:
             logger.info("rag classifier: question=%r need_rag=%s", question[:80], need)
             if not need:
                 return ""
-            results = await retrieve(f"{car_name}: {question}", top_k=3)
-            return format_context(results)
+            
+            from core.logger import get_langfuse_client
+            langfuse = get_langfuse_client()
+            
+            if langfuse:
+                with langfuse.start_as_current_observation(
+                    name="retrieve",
+                    as_type="span",
+                    input={"query": f"{car_name}: {question}"}
+                ) as span:
+                    results = await retrieve(f"{car_name}: {question}", top_k=3)
+                    formatted_context = format_context(results)
+                    metadata = {"scores": [round(r.get("distance", 0.0), 4) for r in results]}
+                    span.update(output=formatted_context, metadata=metadata)
+                    return formatted_context
+            else:
+                results = await retrieve(f"{car_name}: {question}", top_k=3)
+                return format_context(results)
         except Exception:
             logger.exception("RAG pipeline failed; continuing without context")
             return ""
@@ -110,9 +126,25 @@ class LLMService:
             logger.info("voice rag classifier: car=%r need_rag=%s", car_name, need)
             if not need:
                 return "", False
-            results = await retrieve(seed_query, top_k=3)
-            context = format_context(results)
-            return context, bool(context)
+            
+            from core.logger import get_langfuse_client
+            langfuse = get_langfuse_client()
+
+            if langfuse:
+                with langfuse.start_as_current_observation(
+                    name="retrieve",
+                    as_type="span",
+                    input={"query": seed_query}
+                ) as span:
+                    results = await retrieve(seed_query, top_k=3)
+                    context = format_context(results)
+                    metadata = {"scores": [round(r.get("distance", 0.0), 4) for r in results]}
+                    span.update(output=context, metadata=metadata)
+                    return context, bool(context)
+            else:
+                results = await retrieve(seed_query, top_k=3)
+                context = format_context(results)
+                return context, bool(context)
         except Exception:
             logger.exception("Voice RAG preload failed; continuing without context")
             return "", False
