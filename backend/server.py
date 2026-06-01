@@ -273,6 +273,29 @@ async def _build_rag_context(question: str, car_name: str) -> str:
         return ""
 
 
+async def _build_rag_context_for_voice(car_name: str) -> tuple[str, bool]:
+    """Preload RAG context for voice agent startup.
+
+    Uses classifier to decide if general car knowledge should be preloaded.
+    Returns (context, used_rag) tuple.
+    """
+    try:
+        from rag.classifier import classify_need_rag
+        from rag.retrieve import retrieve, format_context
+        client = get_anthropic_client()
+        seed_query = f"Tell me about {car_name} specifications, features, and details"
+        need = await classify_need_rag(client, MODEL_ID, seed_query)
+        logger.info("voice rag classifier: car=%r need_rag=%s", car_name, need)
+        if not need:
+            return "", False
+        results = await retrieve(seed_query, top_k=8)
+        context = format_context(results)
+        return context, bool(context)
+    except Exception:
+        logger.exception("Voice RAG preload failed; continuing without context")
+        return "", False
+
+
 @api_router.post("/chat-text", response_model=ChatTextResponse)
 async def chat_text(payload: ChatTextRequest):
     if not payload.message.strip():
@@ -769,10 +792,23 @@ async def agora_start(payload: AgoraStartRequest):
     user_token = _build_rtc_token(channel, user_uid)
     agent_token = _build_rtc_token(channel, agent_uid)
 
-    system_prompt = ARIA_SYSTEM_PROMPT_TMPL.format(
+    base_system = ARIA_SYSTEM_PROMPT_TMPL.format(
         car_name=payload.car_name,
         car_tagline=payload.car_tagline or '',
     ) + " Keep replies under 50 words because they will be spoken aloud."
+
+    rag_context, used_rag = await _build_rag_context_for_voice(payload.car_name)
+    if used_rag and rag_context:
+        system_prompt = (
+            base_system
+            + "\n\nUse only the facts in the <reference> block below to answer specific spec questions. "
+              "If the reference doesn't cover it, say so briefly and offer to follow up.\n"
+              "<reference>\n" + rag_context + "\n</reference>"
+        )
+        logger.info("agora start: RAG enabled for car=%r", payload.car_name)
+    else:
+        system_prompt = base_system
+        logger.info("agora start: RAG not needed for car=%r", payload.car_name)
 
     greeting = (
         f"Hi! I'm Aria. I see you're checking out the {payload.car_name}. "
