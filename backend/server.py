@@ -447,6 +447,7 @@ async def _persist_voice_turn(
     assistant_text: str,
     model: str,
     angle: Optional[str] = None,
+    recommended_car: Optional[str] = None,
     used_rag: bool = False,
 ) -> None:
     """Write a voice-mode turn into the shared chat-log table.
@@ -464,6 +465,7 @@ async def _persist_voice_turn(
             "user_message": user_text or "",
             "ai_response": assistant_text or "",
             "angle": angle,
+            "recommended_car": recommended_car,
             "used_rag": used_rag,
             "mode": "voice",
             "model": model,
@@ -621,6 +623,7 @@ async def llm_proxy_chat_completions(payload: OpenAIChatRequest, request: Reques
                     assistant_text="".join(assistant_buf),
                     model=model,
                     angle=angle_value,
+                    recommended_car=car_value,
                     used_rag=used_rag,
                 )
 
@@ -652,8 +655,8 @@ async def llm_proxy_chat_completions(payload: OpenAIChatRequest, request: Reques
         logger.exception("llm-proxy non-stream failed")
         raise HTTPException(status_code=502, detail=f"LLM proxy error: {str(e)[:200]}")
 
-    # Strip angle sentinel for the non-streaming response too
-    angle_value, text = parse_angle_tag(raw_text)
+    # Strip control tags from the non-streaming response too
+    angle_value, car_value, text = parse_control_tags(raw_text)
 
     # Persist the non-streaming turn too (e.g., for manual proxy testing).
     await _persist_voice_turn(
@@ -662,6 +665,7 @@ async def llm_proxy_chat_completions(payload: OpenAIChatRequest, request: Reques
         assistant_text=text,
         model=model,
         angle=angle_value,
+        recommended_car=car_value,
         used_rag=used_rag,
     )
 
@@ -695,12 +699,13 @@ async def get_pending_angle(session_id: str):
         logger.exception("pending-angle query failed")
         raise HTTPException(status_code=502, detail="lookup failed")
     if not turns:
-        return {"angle": None, "ts": None, "mode": None}
+        return {"angle": None, "ts": None, "mode": None, "recommended_car": None}
     t = turns[0]
     return {
         "angle": t.get("angle"),
         "ts": t.get("created_at"),
         "mode": t.get("mode"),
+        "recommended_car": t.get("recommended_car"),
     }
 
 
@@ -801,7 +806,7 @@ async def agora_start(payload: AgoraStartRequest):
     body = {
         "name": agent_name,
         # TTS-only preset; LLM is fully custom via properties.llm below.
-        "preset": "minimax_speech_2_8_turbo",
+        "preset": "openai_gpt_4o_mini,minimax_speech_2_8_turbo",
         "properties": {
             "channel": channel,
             "token": agent_token,
@@ -810,8 +815,9 @@ async def agora_start(payload: AgoraStartRequest):
             "idle_timeout": 120,
             "asr": {"language": "en-US"},
             "llm": {
-                "url": llm_proxy_url,
-                "api_key": LLM_PROXY_SECRET,
+                # "url": MODEL_ENDPOINT,
+                # "api_key": ANTHROPIC_API_KEY,
+                # "headers": "{\"anthropic-version\":\"2023-06-01\"}",
                 "system_messages": [
                     {"role": "system", "content": system_prompt}
                 ],
@@ -821,7 +827,7 @@ async def agora_start(payload: AgoraStartRequest):
                 "input_modalities": ["text"],
                 "output_modalities": ["text"],
                 "params": {
-                    "model": MODEL_ID,
+                    "model": "openai_gpt_4o_mini",
                     "max_tokens": 512,
                     # Smuggle our session_id through OpenAI's `user` field so the
                     # proxy can persist this voice turn under the same key as text.

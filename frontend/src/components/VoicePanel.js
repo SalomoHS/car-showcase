@@ -15,7 +15,7 @@ const PRESENTER_IMAGE =
  *   3. Subscribe to remote audio (Aria) → autoplay
  *   4. On close → unpublish, leave, POST /api/agora/stop
  */
-const VoicePanel = ({ car, sessionId, onSessionId, onAngleHint, onClose }) => {
+const VoicePanel = ({ car, sessionId, onSessionId, onAngleHint, onCarRecommendation, onClose }) => {
   const [status, setStatus] = useState('connecting'); // connecting | live | error
   const [errorMsg, setErrorMsg] = useState('');
   const [micMuted, setMicMuted] = useState(false);
@@ -27,13 +27,16 @@ const VoicePanel = ({ car, sessionId, onSessionId, onAngleHint, onClose }) => {
   const remoteVolumeIntervalRef = useRef(null);
   const sessionIdRef = useRef(sessionId);
   const angleHintRef = useRef(onAngleHint);
+  const carRecommendationRef = useRef(onCarRecommendation);
   const lastAngleTsRef = useRef(null);
   const anglePollIntervalRef = useRef(null);
+  const lastCarRecTsRef = useRef(null);
 
   // Keep refs up to date so the polling interval below sees the latest callback / session.
   useEffect(() => { angleHintRef.current = onAngleHint; }, [onAngleHint]);
+  useEffect(() => { carRecommendationRef.current = onCarRecommendation; }, [onCarRecommendation]);
 
-  // ─────────── Poll pending-angle while voice is live ───────────
+  // ─────────── Poll pending-angle and car recommendations while voice is live ───────────
   useEffect(() => {
     if (status !== 'live' || !sessionIdRef.current) return undefined;
     const poll = async () => {
@@ -51,6 +54,10 @@ const VoicePanel = ({ car, sessionId, onSessionId, onAngleHint, onClose }) => {
         // Forward both positive (frontseat/backseat/trunk) and null hints — parent
         // decides whether to open, switch, or auto-close.
         if (angleHintRef.current) angleHintRef.current(data.angle);
+        // Forward car recommendations if present
+        if (data.recommended_car && carRecommendationRef.current) {
+          carRecommendationRef.current(data.recommended_car);
+        }
       } catch (_) {
         // Network blips are fine; we just retry on the next tick.
       }
@@ -64,7 +71,7 @@ const VoicePanel = ({ car, sessionId, onSessionId, onAngleHint, onClose }) => {
     };
   }, [status]);
 
-  // ─────────── Connect on mount ───────────
+  // ─────────── Teardown ───────────
   useEffect(() => {
     let cancelled = false;
 
@@ -97,6 +104,7 @@ const VoicePanel = ({ car, sessionId, onSessionId, onAngleHint, onClose }) => {
               { timeout: 4000 }
             );
             lastAngleTsRef.current = snap?.data?.ts || null;
+            lastCarRecTsRef.current = snap?.data?.ts || null;
           }
         } catch (_) {}
 

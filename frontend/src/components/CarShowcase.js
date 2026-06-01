@@ -410,6 +410,15 @@ const CarShowcase = () => {
     }
   };
 
+  // Auto-switch to the recommended car when AI provides a car recommendation
+  const handleAiCarRecommendation = (recommendedCar) => {
+    if (!recommendedCar) return;
+    const carExists = CARS.find((c) => c.id === recommendedCar);
+    if (carExists && carExists.id !== selectedCarId) {
+      setSelectedCarId(carExists.id);
+    }
+  };
+
   // Cleanup animation handles when car changes or unmounts
   useEffect(() => {
     return () => {
@@ -520,6 +529,8 @@ const CarShowcase = () => {
       setAvatarStatus('idle');
       // Auto-trigger / auto-close angle viewer based on Aria's reply.
       handleAiAngleHint(data.angle);
+      // Auto-switch to recommended car if Aria suggests a different car
+      handleAiCarRecommendation(data.car);
     } catch (err) {
       console.error('Chat failed', err);
       setAvatarText("Sorry, I couldn't reach the showroom server. Please try again.");
@@ -734,6 +745,7 @@ const CarShowcase = () => {
             sessionId={chatSessionId}
             onSessionId={(sid) => setChatSessionId(sid)}
             onAngleHint={(angle) => handleAiAngleHint(angle)}
+            onCarRecommendation={(carId) => handleAiCarRecommendation(carId)}
             onClose={() => setMode('chat')}
           />
         )}
