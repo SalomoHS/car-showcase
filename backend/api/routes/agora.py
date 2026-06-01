@@ -90,7 +90,7 @@ async def agora_start(
 
     body = {
         "name": agent_name,
-        "preset": "openai_gpt_4o_mini,minimax_speech_2_8_turbo",
+        "preset": "minimax_speech_2_8_turbo",
         "properties": {
             "channel": channel,
             "token": agent_token,
@@ -99,8 +99,8 @@ async def agora_start(
             "idle_timeout": 120,
             "asr": {"language": "en-US"},
             "llm": {
-                # "url": llm_proxy_url,
-                # "api_key": settings.LLM_PROXY_SECRET,
+                 "url": llm_proxy_url,
+                 "api_key": settings.LLM_PROXY_SECRET,
                 "system_messages": [{"role": "system", "content": system_prompt}],
                 "greeting_message": greeting,
                 "failure_message": "Sorry, one moment while I reconnect.",
@@ -108,7 +108,7 @@ async def agora_start(
                 "input_modalities": ["text"],
                 "output_modalities": ["text"],
                 "params": {
-                    "model": "gpt-4o-mini",
+                    "model": "claude-sonnet-4.6",
                     "max_tokens": 512,
                     "user": session_id,
                 },
