@@ -94,7 +94,7 @@ class LLMService:
             logger.info("rag classifier: question=%r need_rag=%s", question[:80], need)
             if not need:
                 return ""
-            results = await retrieve(f"{car_name}: {question}", top_k=5)
+            results = await retrieve(f"{car_name}: {question}", top_k=3)
             return format_context(results)
         except Exception:
             logger.exception("RAG pipeline failed; continuing without context")
@@ -110,7 +110,7 @@ class LLMService:
             logger.info("voice rag classifier: car=%r need_rag=%s", car_name, need)
             if not need:
                 return "", False
-            results = await retrieve(seed_query, top_k=8)
+            results = await retrieve(seed_query, top_k=3)
             context = format_context(results)
             return context, bool(context)
         except Exception:
