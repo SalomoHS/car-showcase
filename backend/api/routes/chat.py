@@ -7,7 +7,7 @@ import time
 import json as _json
 
 from models.domain import ChatTextRequest, ChatTextResponse, OpenAIChatRequest, OpenAIChatMessage
-from api.deps import get_db_service, get_llm_service, DynamoDBService, LLMService
+from api.deps import get_db_service, get_llm_service, get_cw_metrics_service, DynamoDBService, LLMService, CloudWatchMetricsService
 from core.config import settings
 from core.logger import logger, get_langfuse_client
 
@@ -20,15 +20,19 @@ def _chat_expires_at() -> int:
 async def chat_text(
     payload: ChatTextRequest,
     db: DynamoDBService = Depends(get_db_service),
-    llm: LLMService = Depends(get_llm_service)
+    llm: LLMService = Depends(get_llm_service),
+    cw: CloudWatchMetricsService = Depends(get_cw_metrics_service)
 ):
     if not payload.message.strip():
+        await cw.increment_error_count()
         raise HTTPException(status_code=400, detail="message cannot be empty")
 
     session_id = payload.session_id or str(uuid.uuid4())
     from core.logger import session_id_var
     session_id_var.set(session_id)
     logger.info(f"chat_text: started processing request for session {session_id}")
+    await cw.increment_request_count()
+
     from services.llm import ARIA_SYSTEM_PROMPT_TMPL
     base_system = ARIA_SYSTEM_PROMPT_TMPL.format(
         car_name=payload.car_name,
@@ -111,6 +115,7 @@ async def chat_text(
             raise
         except Exception as e:
             logger.exception("LLM call failed")
+            await cw.increment_error_count()
             raise HTTPException(status_code=502, detail=f"LLM error: {str(e)[:200]}")
 
         angle, car, text = llm.parse_control_tags(raw_text)
@@ -277,7 +282,8 @@ async def llm_proxy_chat_completions(
     payload: OpenAIChatRequest,
     request: Request,
     db: DynamoDBService = Depends(get_db_service),
-    llm: LLMService = Depends(get_llm_service)
+    llm: LLMService = Depends(get_llm_service),
+    cw: CloudWatchMetricsService = Depends(get_cw_metrics_service)
 ):
     _check_proxy_auth(request.headers.get("authorization") or request.headers.get("Authorization"))
     system_prompt, anth_messages = _openai_to_anthropic(payload)
@@ -288,6 +294,8 @@ async def llm_proxy_chat_completions(
         session_id_var.set(session_id)
     last_user_text = _last_user_text(payload.messages)
     full_messages = [{"role": m.role, "content": _flatten_openai_content(m.content)} for m in payload.messages]
+    
+    await cw.increment_request_count()
 
     used_rag = False
     if last_user_text:
@@ -368,10 +376,11 @@ async def llm_proxy_chat_completions(
                     "created": created, "model": model,
                     "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
                 }
-                yield f"data: {_json.dumps(stop_chunk)}\n\n"
+                yield f"data: {stop_chunk}\n\n"
                 yield "data: [DONE]\n\n"
             except Exception as e:
                 logger.exception("llm-proxy stream failed")
+                await cw.increment_error_count()
                 err = {"error": {"message": str(e)[:300], "type": "upstream_error"}}
                 yield f"data: {_json.dumps(err)}\n\n"
                 yield "data: [DONE]\n\n"
@@ -402,6 +411,7 @@ async def llm_proxy_chat_completions(
         raw_text = "".join(parts)
     except Exception as e:
         logger.exception("llm-proxy non-stream failed")
+        await cw.increment_error_count()
         await _persist_voice_turn(
             session_id=session_id or "", user_text=last_user_text,
             assistant_text="Sorry, one moment while I reconnect.", model=model, db=db,
