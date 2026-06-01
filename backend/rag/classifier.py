@@ -54,19 +54,53 @@ async def classify_need_rag(anthropic_client, model: str, question: str) -> bool
     `anthropic_client` and `model` are kept for API stability so the caller can
     swap in an LLM-based implementation later without code changes.
     """
+    from core.logger import get_langfuse_client
+    from contextlib import ExitStack
+    langfuse = get_langfuse_client()
+    
     q = (question or "").strip()
     if not q:
         return False
+        
     try:
-        response = await anthropic_client.messages.create(
-            model=model,
-            max_tokens=10,
-            system="Determine if the user's question requires querying a car details (specification, testimony, price). Reply with only 'true' or 'false'.",
-            messages=[{"role": "user", "content": q}],
-            temperature=0.0,
-        )
-        answer = response.content[0].text.strip().lower()
-        return "true" in answer
-    except Exception:
+        # Using LLM as requested. Increasing max_tokens because the custom Anthropic 
+        # endpoint enforces extended thinking, which requires more tokens before 
+        # it outputs the final true/false answer.
+        with ExitStack() as stack:
+            generation = None
+            if langfuse:
+                generation = stack.enter_context(langfuse.start_as_current_observation(
+                    name="classifier_llm",
+                    as_type="generation",
+                    model=model,
+                    input=q,
+                ))
+                
+            response = await anthropic_client.messages.create(
+                model=model,
+                max_tokens=1000,
+                system="Determine if the user's question requires querying a car details (specification, testimony, price). Reply with only 'true' or 'false'.",
+                messages=[{"role": "user", "content": q}],
+                temperature=0.0,
+            )
+            
+            parts = []
+            for block in response.content or []:
+                block_type = getattr(block, "type", None) or (block.get("type") if isinstance(block, dict) else None)
+                if block_type == "text":
+                    parts.append(getattr(block, "text", None) or (block.get("text") if isinstance(block, dict) else ""))
+            
+            answer = ("".join(parts)).strip().lower()
+            result = "true" in answer
+            
+            if generation:
+                generation.update(
+                    output=answer,
+                    metadata={"result": result}
+                )
+                
+            return result
+    except Exception as e:
         logger.exception("classifier failed; defaulting need_rag=False")
+        # Ensure error state is recorded in langfuse context if we throw
         return False
