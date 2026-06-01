@@ -14,12 +14,55 @@ import httpx
 from anthropic import AsyncAnthropic
 from agora_token_builder import RtcTokenBuilder
 
+# Langfuse import - use the main client
+try:
+    from langfuse import Langfuse
+    LANGFUSE_AVAILABLE = True
+except ImportError:
+    LANGFUSE_AVAILABLE = False
+    logger_temp = logging.getLogger(__name__)
+    logger_temp.warning("Langfuse not installed. Install with: pip install langfuse")
+
 import db_dynamo as ddb
 from db_dynamo import T_STATUS, T_LEADS, T_CHAT
 
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
+
+# Configure logging early
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# ──────────────────── LANGFUSE INITIALIZATION ────────────────────
+LANGFUSE_SECRET_KEY = os.environ.get('LANGFUSE_SECRET_KEY')
+LANGFUSE_PUBLIC_KEY = os.environ.get('LANGFUSE_PUBLIC_KEY')
+LANGFUSE_BASE_URL = os.environ.get('LANGFUSE_BASE_URL', 'https://cloud.langfuse.com')
+
+# Initialize Langfuse client
+_langfuse_client: Optional[Langfuse] = None
+
+
+def get_langfuse_client() -> Optional[Langfuse]:
+    """Get or initialize the Langfuse client. Returns None if not configured."""
+    global _langfuse_client
+    if not LANGFUSE_AVAILABLE:
+        return None
+    if _langfuse_client is None and LANGFUSE_SECRET_KEY and LANGFUSE_PUBLIC_KEY:
+        try:
+            _langfuse_client = Langfuse(
+                secret_key=LANGFUSE_SECRET_KEY,
+                public_key=LANGFUSE_PUBLIC_KEY,
+                host=LANGFUSE_BASE_URL,
+            )
+            logger.info("Langfuse client initialized successfully")
+        except Exception as e:
+            logger.warning(f"Failed to initialize Langfuse: {e}")
+            return None
+    return _langfuse_client
 
 # MongoDB removed — replaced by AWS DynamoDB (see db_dynamo.py)
 
@@ -307,6 +350,27 @@ async def chat_text(payload: ChatTextRequest):
         car_tagline=payload.car_tagline or '',
     )
 
+    # Initialize Langfuse trace
+    langfuse = get_langfuse_client()
+    trace = None
+    if langfuse:
+        try:
+            from langfuse.types import TraceContext
+            ctx = TraceContext(session_id=session_id, user_id=f"car-{payload.car_id}")
+            trace = langfuse.start_observation(
+                name="chat-text",
+                trace_context=ctx,
+                metadata={
+                    "car_id": payload.car_id,
+                    "car_name": payload.car_name,
+                    "mode": "text",
+                },
+                input={"message": payload.message},
+            )
+            logger.info(f"Langfuse trace created for session: {session_id}")
+        except Exception as e:
+            logger.error(f"Failed to create Langfuse trace: {e}", exc_info=True)
+
     # Step 1: classifier → optional RAG
     rag_context = await _build_rag_context(payload.message, payload.car_name)
     used_rag = bool(rag_context)
@@ -331,8 +395,28 @@ async def chat_text(payload: ChatTextRequest):
     messages.append({"role": "user", "content": payload.message})
 
     # Step 3: main LLM call
+    generation = None
     try:
         client = get_anthropic_client()
+        
+        # Start Langfuse generation
+        if trace:
+            try:
+                generation = trace.start_observation(
+                    name="anthropic-chat",
+                    as_type="generation",
+                    model=MODEL_ID,
+                    input=messages,
+                    metadata={
+                        "system_prompt_preview": system_prompt[:200] + "..." if len(system_prompt) > 200 else system_prompt,
+                        "used_rag": used_rag,
+                        "message_count": len(messages),
+                    },
+                )
+                logger.info(f"Langfuse generation started for session: {session_id}")
+            except Exception as e:
+                logger.error(f"Failed to create Langfuse generation: {e}", exc_info=True)
+        
         resp = await client.messages.create(
             model=MODEL_ID,
             max_tokens=512,
@@ -347,6 +431,28 @@ async def chat_text(payload: ChatTextRequest):
         raw_text = ("".join(parts)).strip()
         if not raw_text:
             raise ValueError("Empty response from model")
+        
+        # Update Langfuse generation with response
+        if generation:
+            try:
+                usage_dict = None
+                if hasattr(resp, "usage") and resp.usage:
+                    usage_dict = {
+                        "input": getattr(resp.usage, "input_tokens", 0),
+                        "output": getattr(resp.usage, "output_tokens", 0),
+                        "total": getattr(resp.usage, "input_tokens", 0) + getattr(resp.usage, "output_tokens", 0),
+                    }
+                
+                generation.update(
+                    output=raw_text,
+                    usage_details=usage_dict,
+                )
+                if hasattr(generation, 'end'):
+                    generation.end()
+                logger.info(f"Langfuse generation updated for session: {session_id}")
+            except Exception as e:
+                logger.error(f"Failed to update Langfuse generation: {e}", exc_info=True)
+                
     except HTTPException:
         raise
     except Exception as e:
@@ -371,6 +477,32 @@ async def chat_text(payload: ChatTextRequest):
         "model": MODEL_ID,
         "expires_at": _chat_expires_at(),
     })
+    
+    # Update final trace
+    if trace:
+        try:
+            if hasattr(trace, 'update'):
+                trace.update(
+                    output={"text": text, "angle": angle, "recommended_car": car},
+                    metadata={
+                        "car_id": payload.car_id,
+                        "car_name": payload.car_name,
+                        "mode": "text",
+                        "angle": angle,
+                        "recommended_car": car,
+                        "used_rag": used_rag,
+                    },
+                )
+            if hasattr(trace, 'end'):
+                trace.end()
+            
+            # Flush on background completion
+            if hasattr(langfuse, 'flush'):
+                langfuse.flush()
+                
+            logger.info(f"Langfuse trace finalized for session: {session_id}")
+        except Exception as e:
+            logger.error(f"Failed to finalize Langfuse trace: {e}", exc_info=True)
 
     return ChatTextResponse(text=text, session_id=session_id, angle=angle, car=car, used_rag=used_rag)
 
@@ -472,6 +604,7 @@ async def _persist_voice_turn(
     angle: Optional[str] = None,
     recommended_car: Optional[str] = None,
     used_rag: bool = False,
+    messages: Optional[List[dict]] = None,
 ) -> None:
     """Write a voice-mode turn into the shared chat-log table.
 
@@ -494,6 +627,76 @@ async def _persist_voice_turn(
             "model": model,
             "expires_at": _chat_expires_at(),
         })
+        
+        # Log to Langfuse - use the same session_id as text chat
+        langfuse = get_langfuse_client()
+        if langfuse:
+            try:
+                from langfuse.types import TraceContext
+                car_id = None
+                user_id = None
+                if session_id and session_id.startswith("car-"):
+                    parts = session_id.split("-")
+                    if len(parts) >= 2:
+                        car_id = parts[1]
+                        user_id = f"car-{car_id}"
+
+                ctx_kwargs = {"session_id": session_id}
+                if user_id:
+                    ctx_kwargs["user_id"] = user_id
+                
+                ctx = TraceContext(**ctx_kwargs)
+
+                metadata = {
+                    "mode": "voice",
+                    "model": model,
+                    "angle": angle,
+                    "recommended_car": recommended_car,
+                    "used_rag": used_rag,
+                }
+                if car_id:
+                    metadata["car_id"] = car_id
+
+                trace_input = {"messages": messages} if messages else {"message": user_text or ""}
+                trace = langfuse.start_observation(
+                    name="voice-chat",
+                    trace_context=ctx,
+                    input=trace_input,
+                    output={"response": assistant_text or ""},
+                    metadata=metadata
+                )
+                
+                generation_input = messages if messages else [{"role": "user", "content": user_text or ""}]
+                generation = trace.start_observation(
+                    name="voice-generation",
+                    as_type="generation",
+                    model=model,
+                    input=generation_input,
+                    output=assistant_text or "",
+                    metadata={
+                        "angle": angle,
+                        "recommended_car": recommended_car,
+                        "used_rag": used_rag,
+                    },
+                )
+                
+                if hasattr(generation, 'end'):
+                    generation.end()
+                
+                if hasattr(trace, 'update'):
+                    trace.update(
+                        output={"response": assistant_text or ""}
+                    )
+                if hasattr(trace, 'end'):
+                    trace.end()
+                    
+                if hasattr(langfuse, 'flush'):
+                    langfuse.flush()
+                
+                logger.info(f"Langfuse voice turn logged for session: {session_id}")
+            except Exception as e:
+                logger.error(f"Failed to log voice turn to Langfuse: {e}", exc_info=True)
+                
     except Exception:
         logger.exception("Failed to persist voice turn for session=%s", session_id)
 
@@ -514,6 +717,8 @@ async def llm_proxy_chat_completions(payload: OpenAIChatRequest, request: Reques
     # `user` field. We treat it as our session_id so voice + text share one transcript.
     session_id = (payload.user or "").strip() or None
     last_user_text = _last_user_text(payload.messages)
+    
+    full_messages = [{"role": m.role, "content": _flatten_openai_content(m.content)} for m in payload.messages]
 
     # RAG: classifier → optional context injection
     used_rag = False
@@ -638,6 +843,10 @@ async def llm_proxy_chat_completions(payload: OpenAIChatRequest, request: Reques
                 err = {"error": {"message": str(e)[:300], "type": "upstream_error"}}
                 yield f"data: {_json.dumps(err)}\n\n"
                 yield "data: [DONE]\n\n"
+                
+                # If an error occurs, Agora will play the failure message, so we log it.
+                if not assistant_buf:
+                    assistant_buf.append("Sorry, one moment while I reconnect.")
             finally:
                 # Persist the turn (if session_id present) — voice + text share table.
                 await _persist_voice_turn(
@@ -648,6 +857,7 @@ async def llm_proxy_chat_completions(payload: OpenAIChatRequest, request: Reques
                     angle=angle_value,
                     recommended_car=car_value,
                     used_rag=used_rag,
+                    messages=full_messages,
                 )
 
         return StreamingResponse(event_stream(), media_type="text/event-stream")
@@ -676,6 +886,17 @@ async def llm_proxy_chat_completions(payload: OpenAIChatRequest, request: Reques
         raw_text = "".join(parts)
     except Exception as e:
         logger.exception("llm-proxy non-stream failed")
+        
+        # Persist the failure message to match Agora's fallback behavior
+        await _persist_voice_turn(
+            session_id=session_id or "",
+            user_text=last_user_text,
+            assistant_text="Sorry, one moment while I reconnect.",
+            model=model,
+            used_rag=used_rag,
+            messages=full_messages,
+        )
+        
         raise HTTPException(status_code=502, detail=f"LLM proxy error: {str(e)[:200]}")
 
     # Strip control tags from the non-streaming response too
@@ -690,6 +911,7 @@ async def llm_proxy_chat_completions(payload: OpenAIChatRequest, request: Reques
         angle=angle_value,
         recommended_car=car_value,
         used_rag=used_rag,
+        messages=full_messages,
     )
 
     return {
@@ -851,9 +1073,8 @@ async def agora_start(payload: AgoraStartRequest):
             "idle_timeout": 120,
             "asr": {"language": "en-US"},
             "llm": {
-                # "url": MODEL_ENDPOINT,
-                # "api_key": ANTHROPIC_API_KEY,
-                # "headers": "{\"anthropic-version\":\"2023-06-01\"}",
+                "url": llm_proxy_url,
+                "api_key": LLM_PROXY_SECRET,
                 "system_messages": [
                     {"role": "system", "content": system_prompt}
                 ],
@@ -863,7 +1084,7 @@ async def agora_start(payload: AgoraStartRequest):
                 "input_modalities": ["text"],
                 "output_modalities": ["text"],
                 "params": {
-                    "model": "openai_gpt_4o_mini",
+                    "model": MODEL_ID,
                     "max_tokens": 512,
                     # Smuggle our session_id through OpenAI's `user` field so the
                     # proxy can persist this voice turn under the same key as text.
@@ -952,9 +1173,4 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+
