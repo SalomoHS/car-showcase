@@ -26,6 +26,9 @@ async def chat_text(
         raise HTTPException(status_code=400, detail="message cannot be empty")
 
     session_id = payload.session_id or str(uuid.uuid4())
+    from core.logger import session_id_var
+    session_id_var.set(session_id)
+    logger.info(f"chat_text: started processing request for session {session_id}")
     from services.llm import ARIA_SYSTEM_PROMPT_TMPL
     base_system = ARIA_SYSTEM_PROMPT_TMPL.format(
         car_name=payload.car_name,
@@ -280,6 +283,9 @@ async def llm_proxy_chat_completions(
     system_prompt, anth_messages = _openai_to_anthropic(payload)
     model = payload.model or settings.MODEL_ID
     session_id = (payload.user or "").strip() or None
+    if session_id:
+        from core.logger import session_id_var
+        session_id_var.set(session_id)
     last_user_text = _last_user_text(payload.messages)
     full_messages = [{"role": m.role, "content": _flatten_openai_content(m.content)} for m in payload.messages]
 

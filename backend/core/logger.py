@@ -1,11 +1,44 @@
 import logging
 import sys
+import boto3
+import watchtower
+import contextvars
 from core.config import settings
+
+session_id_var = contextvars.ContextVar("session_id", default="default-stream")
+
+class SessionIdFilter(logging.Filter):
+    def filter(self, record):
+        record.session_id = session_id_var.get()
+        return True
+
+class DynamicCloudWatchLogHandler(watchtower.CloudWatchLogHandler):
+    def _get_stream_name(self, record):
+        return getattr(record, "session_id", "default-stream")
+
+# Initialize Boto3 CloudWatch client using settings
+try:
+    boto3_client = boto3.client(
+        'logs',
+        region_name=settings.AWS_REGION,
+        aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY
+    )
+    
+    cw_handler = DynamicCloudWatchLogHandler(
+        log_group_name="virtual-dealer-logs",
+        boto3_client=boto3_client
+    )
+    cw_handler.addFilter(SessionIdFilter())
+    handlers = [logging.StreamHandler(sys.stdout), cw_handler]
+except Exception as e:
+    handlers = [logging.StreamHandler(sys.stdout)]
+    print(f"Failed to initialize CloudWatch logging: {e}", file=sys.stderr)
 
 logging.basicConfig(
     level=settings.LOG_LEVEL,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
+    handlers=handlers
 )
 
 logger = logging.getLogger("backend")

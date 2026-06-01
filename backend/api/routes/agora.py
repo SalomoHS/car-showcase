@@ -66,6 +66,9 @@ async def agora_start(
 
     greeting = f"Hi! I'm Aria. I see you're checking out the {payload.car_name}. Ask me anything about it."
     session_id = (payload.session_id or '').strip() or str(uuid.uuid4())
+    from core.logger import session_id_var
+    session_id_var.set(session_id)
+    logger.info(f"agora_start: initializing voice session {session_id}")
     agent_name = f"aria-{payload.car_id}-{suffix}"
 
     backend_public_url = settings.PUBLIC_BACKEND_URL or settings.REACT_APP_BACKEND_URL or ''

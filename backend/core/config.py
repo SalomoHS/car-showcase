@@ -8,6 +8,8 @@ load_dotenv(ROOT_DIR / '.env')
 class Settings:
     LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO').upper()
     AWS_REGION = os.environ.get("AWS_REGION", "ap-southeast-1")
+    AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID")
+    AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY")
     
     T_STATUS = os.environ.get("DDB_TABLE_STATUS", "virtual-dealer-status-checks")
     T_LEADS = os.environ.get("DDB_TABLE_LEADS", "virtual-dealer-leads")
