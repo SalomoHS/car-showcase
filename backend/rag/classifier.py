@@ -58,7 +58,15 @@ async def classify_need_rag(anthropic_client, model: str, question: str) -> bool
     if not q:
         return False
     try:
-        return _keyword_classify(q)
+        response = await anthropic_client.messages.create(
+            model=model,
+            max_tokens=10,
+            system="Determine if the user's question requires querying a car details (specification, testimony, price). Reply with only 'true' or 'false'.",
+            messages=[{"role": "user", "content": q}],
+            temperature=0.0,
+        )
+        answer = response.content[0].text.strip().lower()
+        return "true" in answer
     except Exception:
         logger.exception("classifier failed; defaulting need_rag=False")
         return False

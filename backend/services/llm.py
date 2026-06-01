@@ -90,7 +90,7 @@ class LLMService:
             from rag.classifier import classify_need_rag
             from rag.retrieve import retrieve, format_context
             client = self.get_client()
-            need = await classify_need_rag(client, settings.MODEL_ID, question)
+            need = await classify_need_rag(client, settings.MODEL_CLASSIFIER, question)
             logger.info("rag classifier: question=%r need_rag=%s", question[:80], need)
             if not need:
                 return ""
@@ -106,7 +106,7 @@ class LLMService:
             from rag.retrieve import retrieve, format_context
             client = self.get_client()
             seed_query = f"Tell me about {car_name} specifications, features, and details"
-            need = await classify_need_rag(client, settings.MODEL_ID, seed_query)
+            need = await classify_need_rag(client, settings.MODEL_CLASSIFIER, seed_query)
             logger.info("voice rag classifier: car=%r need_rag=%s", car_name, need)
             if not need:
                 return "", False

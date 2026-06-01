@@ -24,6 +24,7 @@ class Settings:
     ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY')
     MODEL_ENDPOINT = os.environ.get('MODEL_ENDPOINT')
     MODEL_ID = os.environ.get('MODEL_ID', 'claude-sonnet-4.6')
+    MODEL_CLASSIFIER = os.environ.get('MODEL_CLASSIFIER', 'claude-haiku-4.5')
     EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY')
     
     LLM_PROXY_SECRET = os.environ.get('LLM_PROXY_SECRET', '')
