@@ -1,4 +1,5 @@
 import { Loader2 } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
 
 const PRESENTER_IMAGE =
   'https://clips-presenters.d-id.com/v2/Alyssa_NoHands_BlackShirt_Home/Mvn6Nalx90/image.png';
@@ -36,7 +37,7 @@ const AvatarResponse = ({ status, text }) => {
             </div>
           ) : text ? (
             <div className="avatar-text" data-testid="avatar-text">
-              {text}
+              <ReactMarkdown>{text}</ReactMarkdown>
             </div>
           ) : (
             <div className="generating-state">

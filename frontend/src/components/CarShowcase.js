@@ -165,12 +165,6 @@ const CarShowcase = () => {
   useEffect(() => {
     setImageIndex(0);
     currentFrameRef.current = 0;
-    // Reset avatar conversation when switching cars
-    setAvatarText('');
-    setAvatarStatus('idle');
-    setChatSessionId(crypto.randomUUID());
-    // Also drop out of voice mode so a fresh session is created for the new car
-    setMode('chat');
   }, [selectedCarId]);
 
   // ──────────────── Car switching ────────────────
