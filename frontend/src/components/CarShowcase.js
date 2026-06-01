@@ -6,13 +6,15 @@ import AvatarResponse from './AvatarResponse';
 import VoicePanel from './VoicePanel';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const CDN_CARS = process.env.REACT_APP_CDN_CARS || '';
+const CDN_VIEWS = process.env.REACT_APP_CDN_VIEWS || '';
 
 // ──────────────────── DATA ────────────────────
 // 60-frame turntable sequences extracted via ffmpeg from manufacturer videos.
 // Frames live in /public/cars/{carId}/frame_01.jpg … frame_60.jpg
 const buildFrames = (carId) =>
   Array.from({ length: 60 }, (_, i) =>
-    `/cars/${carId}/frame_${String(i + 1).padStart(2, '0')}.jpg`
+    `${CDN_CARS || '/cars'}/${carId}/frame_${String(i + 1).padStart(2, '0')}.jpg`
   );
 
 const CARS = [
@@ -84,7 +86,7 @@ const buildAngleSequence = (carId, angle) => {
   const key = `${carId}_${angle}`;
   const count = ANGLE_FRAME_COUNTS[key] || 0;
   return Array.from({ length: count }, (_, i) =>
-    `/cars/views/${key}/frame_${String(i + 1).padStart(3, '0')}.jpg`
+    `${CDN_VIEWS || '/cars/views'}/${key}/frame_${String(i + 1).padStart(3, '0')}.jpg`
   );
 };
 
@@ -571,7 +573,7 @@ const CarShowcase = () => {
             {activeAngle && !angleLoading && (
               <img
                 className={`angle-video ${(angleState === 'playing_video' || angleState === 'at_angle' || angleState === 'reversing_video') ? 'visible' : ''}`}
-                src={`/cars/views/${selectedCar.id}_${activeAngle}/frame_${String(angleFrameIdx + 1).padStart(3, '0')}.jpg`}
+                src={`${CDN_VIEWS || '/cars/views'}/${selectedCar.id}_${activeAngle}/frame_${String(angleFrameIdx + 1).padStart(3, '0')}.jpg`}
                 alt=""
                 draggable={false}
                 decoding="sync"
