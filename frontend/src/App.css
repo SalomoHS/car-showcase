@@ -476,6 +476,23 @@ html, body, #root {
   color: #FFFFFF;
 }
 
+/* ────────── INTERACTION CONTAINER ────────── */
+.interaction-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  max-width: 38rem;
+}
+
+.interaction-content {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  min-height: 3.5rem; /* helps with smooth transition */
+}
+
 /* ────────── CHATBOX ────────── */
 .chatbox {
   display: flex;
@@ -490,6 +507,7 @@ html, body, #root {
   border-radius: 9999px;
   padding: 0.4rem 0.5rem 0.4rem 1.25rem;
   transition: border-color 0.25s ease, background-color 0.25s ease;
+  animation: fade-in 0.25s ease-out;
 }
 
 .chatbox:focus-within {
@@ -1087,12 +1105,17 @@ html, body, #root {
 }
 
 
-/* ────────── MODE TOGGLE (right side of chatbox) ────────── */
+/* ────────── MODE TOGGLE (below interaction content) ────────── */
+.mode-toggle-container {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
 .mode-toggle {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  margin-left: 0.5rem;
   padding: 3px;
   background: rgba(0, 0, 0, 0.35);
   border: 1px solid rgba(255, 255, 255, 0.12);
@@ -1135,8 +1158,6 @@ html, body, #root {
 .voice-panel {
   width: 100%;
   max-width: 38rem;
-  align-self: flex-start;
-  margin-left: 0;
   padding: 0.85rem 1rem;
   background: rgba(10, 10, 14, 0.55);
   backdrop-filter: blur(22px);

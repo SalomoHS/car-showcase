@@ -738,18 +738,6 @@ const CarShowcase = () => {
           />
         )}
 
-        {/* Voice conversation panel — only when in voice mode */}
-        {mode === 'voice' && (
-          <VoicePanel
-            car={selectedCar}
-            sessionId={chatSessionId}
-            onSessionId={(sid) => setChatSessionId(sid)}
-            onAngleHint={(angle) => handleAiAngleHint(angle)}
-            onCarRecommendation={(carId) => handleAiCarRecommendation(carId)}
-            onClose={() => setMode('chat')}
-          />
-        )}
-
         {/* View more cars button */}
         <button
           className={`view-more-btn ${menuOpen ? 'active' : ''}`}
@@ -764,62 +752,77 @@ const CarShowcase = () => {
           />
         </button>
 
-        {/* Chatbox (input + send + mode toggle on the right) */}
-        <form
-          className="chatbox"
-          onSubmit={handleChatSubmit}
-          data-testid="chatbox"
-        >
-          <input
-            type="text"
-            value={chatValue}
-            onChange={(e) => setChatValue(e.target.value)}
-            placeholder={
-              mode === 'voice'
-                ? 'Voice mode active — just talk to Aria'
-                : avatarStatus === 'thinking'
-                ? 'Aria is preparing your answer…'
-                : `Ask Aria about the ${selectedCar.brand} ${selectedCar.model}…`
-            }
-            className="chatbox-input"
-            data-testid="chatbox-input"
-            disabled={mode === 'voice' || avatarStatus === 'thinking'}
-          />
-          <button
-            type="submit"
-            className="chatbox-send"
-            data-testid="chatbox-send"
-            aria-label="Send"
-            disabled={mode === 'voice' || !chatValue.trim() || avatarStatus === 'thinking'}
-          >
-            <Send size={16} strokeWidth={1.8} />
-          </button>
-          {/* Mode toggle — right side of the chatbox */}
-          <div className="mode-toggle" data-testid="mode-toggle" role="group" aria-label="Conversation mode">
-            <button
-              type="button"
-              className={`mode-toggle-btn ${mode === 'chat' ? 'active' : ''}`}
-              onClick={() => setMode('chat')}
-              data-testid="mode-toggle-chat"
-              aria-pressed={mode === 'chat'}
-              title="Text chat mode"
-            >
-              <MessageSquare size={14} strokeWidth={2} />
-              <span>Chat</span>
-            </button>
-            <button
-              type="button"
-              className={`mode-toggle-btn ${mode === 'voice' ? 'active' : ''}`}
-              onClick={() => setMode('voice')}
-              data-testid="mode-toggle-voice"
-              aria-pressed={mode === 'voice'}
-              title="Voice conversation with Aria"
-            >
-              <Mic size={14} strokeWidth={2} />
-              <span>Voice</span>
-            </button>
+        {/* Interaction area: Chatbox or VoicePanel, with mode toggle underneath */}
+        <div className="interaction-container">
+          <div className="interaction-content">
+            {mode === 'chat' ? (
+              <form
+                className="chatbox"
+                onSubmit={handleChatSubmit}
+                data-testid="chatbox"
+              >
+                <input
+                  type="text"
+                  value={chatValue}
+                  onChange={(e) => setChatValue(e.target.value)}
+                  placeholder={
+                    avatarStatus === 'thinking'
+                      ? 'Aria is preparing your answer…'
+                      : `Ask Aria about the ${selectedCar.brand} ${selectedCar.model}…`
+                  }
+                  className="chatbox-input"
+                  data-testid="chatbox-input"
+                  disabled={avatarStatus === 'thinking'}
+                />
+                <button
+                  type="submit"
+                  className="chatbox-send"
+                  data-testid="chatbox-send"
+                  aria-label="Send"
+                  disabled={!chatValue.trim() || avatarStatus === 'thinking'}
+                >
+                  <Send size={16} strokeWidth={1.8} />
+                </button>
+              </form>
+            ) : (
+              <VoicePanel
+                car={selectedCar}
+                sessionId={chatSessionId}
+                onSessionId={(sid) => setChatSessionId(sid)}
+                onAngleHint={(angle) => handleAiAngleHint(angle)}
+                onCarRecommendation={(carId) => handleAiCarRecommendation(carId)}
+                onClose={() => setMode('chat')}
+              />
+            )}
           </div>
-        </form>
+
+          <div className="mode-toggle-container">
+            <div className="mode-toggle" data-testid="mode-toggle" role="group" aria-label="Conversation mode">
+              <button
+                type="button"
+                className={`mode-toggle-btn ${mode === 'chat' ? 'active' : ''}`}
+                onClick={() => setMode('chat')}
+                data-testid="mode-toggle-chat"
+                aria-pressed={mode === 'chat'}
+                title="Text chat mode"
+              >
+                <MessageSquare size={14} strokeWidth={2} />
+                <span>Chat</span>
+              </button>
+              <button
+                type="button"
+                className={`mode-toggle-btn ${mode === 'voice' ? 'active' : ''}`}
+                onClick={() => setMode('voice')}
+                data-testid="mode-toggle-voice"
+                aria-pressed={mode === 'voice'}
+                title="Voice conversation with Aria"
+              >
+                <Mic size={14} strokeWidth={2} />
+                <span>Voice</span>
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Test Drive lead-capture modal */}
