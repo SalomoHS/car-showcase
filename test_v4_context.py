@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv("backend/.env")
 
 async def test():
-    from server import get_langfuse_client
+    from backend.core.logger import get_langfuse_client
     from langfuse import propagate_attributes
     import uuid
 
