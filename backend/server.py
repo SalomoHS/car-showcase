@@ -350,59 +350,48 @@ async def chat_text(payload: ChatTextRequest):
         car_tagline=payload.car_tagline or '',
     )
 
-    # Initialize Langfuse trace
+    # Initialize Langfuse trace variables
     langfuse = get_langfuse_client()
     trace = None
-    if langfuse:
-        try:
-            from langfuse.types import TraceContext
-            ctx = TraceContext(session_id=session_id, user_id=f"car-{payload.car_id}")
-            trace = langfuse.start_observation(
-                name="chat-text",
-                trace_context=ctx,
-                metadata={
-                    "car_id": payload.car_id,
-                    "car_name": payload.car_name,
-                    "mode": "text",
-                },
-                input={"message": payload.message},
-            )
-            logger.info(f"Langfuse trace created for session: {session_id}")
-        except Exception as e:
-            logger.error(f"Failed to create Langfuse trace: {e}", exc_info=True)
-
-    # Step 1: classifier → optional RAG
-    rag_context = await _build_rag_context(payload.message, payload.car_name)
-    used_rag = bool(rag_context)
-    if used_rag:
-        system_prompt = (
-            base_system
-            + "\n\nUse only the facts in the <reference> block below to answer specific spec questions. "
-              "If the reference doesn't cover it, say so briefly and offer to follow up.\n"
-              "<reference>\n" + rag_context + "\n</reference>"
-        )
-    else:
-        system_prompt = base_system
-
-    # Step 2: rehydrate prior turns
-    prior = await ddb.query_by_session(T_CHAT, session_id=session_id, ascending=True, limit=20)
-    messages = []
-    for turn in prior:
-        if turn.get("user_message"):
-            messages.append({"role": "user", "content": turn["user_message"]})
-        if turn.get("ai_response"):
-            messages.append({"role": "assistant", "content": turn["ai_response"]})
-    messages.append({"role": "user", "content": payload.message})
-
-    # Step 3: main LLM call
     generation = None
-    try:
-        client = get_anthropic_client()
+    
+    from langfuse import propagate_attributes
+    from contextlib import AsyncExitStack
+
+    # We use propagate_attributes and start_as_current_observation if Langfuse is available
+    async def process_chat():
+        nonlocal trace, generation
         
-        # Start Langfuse generation
-        if trace:
-            try:
-                generation = trace.start_observation(
+        # Step 1: classifier → optional RAG
+        rag_context = await _build_rag_context(payload.message, payload.car_name)
+        used_rag = bool(rag_context)
+        if used_rag:
+            system_prompt = (
+                base_system
+                + "\n\nUse only the facts in the <reference> block below to answer specific spec questions. "
+                  "If the reference doesn't cover it, say so briefly and offer to follow up.\n"
+                  "<reference>\n" + rag_context + "\n</reference>"
+            )
+        else:
+            system_prompt = base_system
+
+        # Step 2: rehydrate prior turns
+        prior = await ddb.query_by_session(T_CHAT, session_id=session_id, ascending=True, limit=20)
+        messages = []
+        for turn in prior:
+            if turn.get("user_message"):
+                messages.append({"role": "user", "content": turn["user_message"]})
+            if turn.get("ai_response"):
+                messages.append({"role": "assistant", "content": turn["ai_response"]})
+        messages.append({"role": "user", "content": payload.message})
+
+        # Step 3: main LLM call
+        try:
+            client = get_anthropic_client()
+            
+            # Start Langfuse generation context
+            if langfuse:
+                generation = langfuse.start_as_current_observation(
                     name="anthropic-chat",
                     as_type="generation",
                     model=MODEL_ID,
@@ -413,75 +402,77 @@ async def chat_text(payload: ChatTextRequest):
                         "message_count": len(messages),
                     },
                 )
+                # Manually enter generation context since we don't want to over-indent
+                generation = generation.__enter__()
                 logger.info(f"Langfuse generation started for session: {session_id}")
-            except Exception as e:
-                logger.error(f"Failed to create Langfuse generation: {e}", exc_info=True)
+            
+            resp = await client.messages.create(
+                model=MODEL_ID,
+                max_tokens=512,
+                system=system_prompt,
+                messages=messages,
+            )
+            parts = []
+            for block in resp.content or []:
+                block_type = getattr(block, "type", None) or (block.get("type") if isinstance(block, dict) else None)
+                if block_type == "text":
+                    parts.append(getattr(block, "text", None) or (block.get("text") if isinstance(block, dict) else ""))
+            raw_text = ("".join(parts)).strip()
+            if not raw_text:
+                raise ValueError("Empty response from model")
+            
+            # Update Langfuse generation with response
+            if generation:
+                try:
+                    usage_dict = None
+                    if hasattr(resp, "usage") and resp.usage:
+                        usage_dict = {
+                            "input": getattr(resp.usage, "input_tokens", 0),
+                            "output": getattr(resp.usage, "output_tokens", 0),
+                            "total": getattr(resp.usage, "input_tokens", 0) + getattr(resp.usage, "output_tokens", 0),
+                        }
+                    
+                    generation.update(
+                        output=raw_text,
+                        usage_details=usage_dict,
+                    )
+                    generation.__exit__(None, None, None)
+                    logger.info(f"Langfuse generation updated for session: {session_id}")
+                except Exception as e:
+                    logger.error(f"Failed to update Langfuse generation: {e}", exc_info=True)
+                    
+        except HTTPException:
+            if generation:
+                generation.__exit__(None, None, None)
+            raise
+        except Exception as e:
+            logger.exception("LLM call failed")
+            if generation:
+                generation.__exit__(None, None, None)
+            raise HTTPException(status_code=502, detail=f"LLM error: {str(e)[:200]}")
+
+        # Step 4: parse the control sentinels and strip them from the visible text
+        angle, car, text = parse_control_tags(raw_text)
+
+        await ddb.put_item(T_CHAT, {
+            "session_id": session_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "id": str(uuid.uuid4()),
+            "car_id": payload.car_id,
+            "car_name": payload.car_name,
+            "user_message": payload.message,
+            "ai_response": text,
+            "angle": angle,
+            "recommended_car": car,
+            "used_rag": used_rag,
+            "mode": "text",
+            "model": MODEL_ID,
+            "expires_at": _chat_expires_at(),
+        })
         
-        resp = await client.messages.create(
-            model=MODEL_ID,
-            max_tokens=512,
-            system=system_prompt,
-            messages=messages,
-        )
-        parts = []
-        for block in resp.content or []:
-            block_type = getattr(block, "type", None) or (block.get("type") if isinstance(block, dict) else None)
-            if block_type == "text":
-                parts.append(getattr(block, "text", None) or (block.get("text") if isinstance(block, dict) else ""))
-        raw_text = ("".join(parts)).strip()
-        if not raw_text:
-            raise ValueError("Empty response from model")
-        
-        # Update Langfuse generation with response
-        if generation:
+        # Update final trace
+        if trace:
             try:
-                usage_dict = None
-                if hasattr(resp, "usage") and resp.usage:
-                    usage_dict = {
-                        "input": getattr(resp.usage, "input_tokens", 0),
-                        "output": getattr(resp.usage, "output_tokens", 0),
-                        "total": getattr(resp.usage, "input_tokens", 0) + getattr(resp.usage, "output_tokens", 0),
-                    }
-                
-                generation.update(
-                    output=raw_text,
-                    usage_details=usage_dict,
-                )
-                if hasattr(generation, 'end'):
-                    generation.end()
-                logger.info(f"Langfuse generation updated for session: {session_id}")
-            except Exception as e:
-                logger.error(f"Failed to update Langfuse generation: {e}", exc_info=True)
-                
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception("LLM call failed")
-        raise HTTPException(status_code=502, detail=f"LLM error: {str(e)[:200]}")
-
-    # Step 4: parse the control sentinels and strip them from the visible text
-    angle, car, text = parse_control_tags(raw_text)
-
-    await ddb.put_item(T_CHAT, {
-        "session_id": session_id,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "id": str(uuid.uuid4()),
-        "car_id": payload.car_id,
-        "car_name": payload.car_name,
-        "user_message": payload.message,
-        "ai_response": text,
-        "angle": angle,
-        "recommended_car": car,
-        "used_rag": used_rag,
-        "mode": "text",
-        "model": MODEL_ID,
-        "expires_at": _chat_expires_at(),
-    })
-    
-    # Update final trace
-    if trace:
-        try:
-            if hasattr(trace, 'update'):
                 trace.update(
                     output={"text": text, "angle": angle, "recommended_car": car},
                     metadata={
@@ -493,18 +484,29 @@ async def chat_text(payload: ChatTextRequest):
                         "used_rag": used_rag,
                     },
                 )
-            if hasattr(trace, 'end'):
-                trace.end()
-            
-            # Flush on background completion
-            if hasattr(langfuse, 'flush'):
-                langfuse.flush()
-                
-            logger.info(f"Langfuse trace finalized for session: {session_id}")
-        except Exception as e:
-            logger.error(f"Failed to finalize Langfuse trace: {e}", exc_info=True)
+            except Exception as e:
+                logger.error(f"Failed to finalize Langfuse trace: {e}", exc_info=True)
 
-    return ChatTextResponse(text=text, session_id=session_id, angle=angle, car=car, used_rag=used_rag)
+        return ChatTextResponse(text=text, session_id=session_id, angle=angle, car=car, used_rag=used_rag)
+
+    if langfuse:
+        with propagate_attributes(session_id=session_id, user_id=f"car-{payload.car_id}"):
+            with langfuse.start_as_current_observation(
+                name="chat-text",
+                as_type="span",
+                input={"message": payload.message},
+                metadata={
+                    "car_id": payload.car_id,
+                    "car_name": payload.car_name,
+                    "mode": "text",
+                }
+            ) as root_span:
+                trace = root_span
+                response = await process_chat()
+                langfuse.flush()
+                return response
+    else:
+        return await process_chat()
 
 
 # ──────────────────── OPENAI-COMPATIBLE PROXY FOR AGORA CUSTOM LLM ────────────────────
@@ -632,7 +634,7 @@ async def _persist_voice_turn(
         langfuse = get_langfuse_client()
         if langfuse:
             try:
-                from langfuse.types import TraceContext
+                from langfuse import propagate_attributes
                 car_id = None
                 user_id = None
                 if session_id and session_id.startswith("car-"):
@@ -644,8 +646,6 @@ async def _persist_voice_turn(
                 ctx_kwargs = {"session_id": session_id}
                 if user_id:
                     ctx_kwargs["user_id"] = user_id
-                
-                ctx = TraceContext(**ctx_kwargs)
 
                 metadata = {
                     "mode": "voice",
@@ -657,39 +657,31 @@ async def _persist_voice_turn(
                 if car_id:
                     metadata["car_id"] = car_id
 
-                trace_input = {"messages": messages} if messages else {"message": user_text or ""}
-                trace = langfuse.start_observation(
-                    name="voice-chat",
-                    trace_context=ctx,
-                    input=trace_input,
-                    output={"response": assistant_text or ""},
-                    metadata=metadata
-                )
-                
-                generation_input = messages if messages else [{"role": "user", "content": user_text or ""}]
-                generation = trace.start_observation(
-                    name="voice-generation",
-                    as_type="generation",
-                    model=model,
-                    input=generation_input,
-                    output=assistant_text or "",
-                    metadata={
-                        "angle": angle,
-                        "recommended_car": recommended_car,
-                        "used_rag": used_rag,
-                    },
-                )
-                
-                if hasattr(generation, 'end'):
-                    generation.end()
-                
-                if hasattr(trace, 'update'):
-                    trace.update(
-                        output={"response": assistant_text or ""}
-                    )
-                if hasattr(trace, 'end'):
-                    trace.end()
-                    
+                with propagate_attributes(**ctx_kwargs):
+                    trace_input = {"messages": messages} if messages else {"message": user_text or ""}
+                    with langfuse.start_as_current_observation(
+                        name="voice-chat",
+                        as_type="span",
+                        input=trace_input,
+                        metadata=metadata
+                    ) as root_span:
+                        
+                        generation_input = messages if messages else [{"role": "user", "content": user_text or ""}]
+                        with langfuse.start_as_current_observation(
+                            name="voice-generation",
+                            as_type="generation",
+                            model=model,
+                            input=generation_input,
+                            metadata={
+                                "angle": angle,
+                                "recommended_car": recommended_car,
+                                "used_rag": used_rag,
+                            },
+                        ) as gen:
+                            gen.update(output=assistant_text or "")
+                            
+                        root_span.update(output={"response": assistant_text or ""})
+                        
                 if hasattr(langfuse, 'flush'):
                     langfuse.flush()
                 
