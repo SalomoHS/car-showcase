@@ -7,60 +7,43 @@
       "width": 24,
       "height": 1,
       "properties": {
-        "markdown": "\n# 🟢 Application Health\n"
+        "markdown": "# 🟢 Application Health"
       }
     },
-    {
-      "type": "metric",
-      "x": 0,
-      "y": 1,
-      "width": 8,
-      "height": 6,
-      "properties": {
-        "metrics": [
-          [ "AWS/ApiGateway", "Count", "ApiName", "http://virtual-dealer-backend.vpssalomo.cloud/", { "stat": "Sum", "label": "Request Rate" } ]
-        ],
-        "view": "timeSeries",
-        "stacked": false,
-        "region": "ap-southeast-1",
-        "title": "Request Rate"
-      }
-    },
-    {
-      "type": "metric",
-      "x": 8,
-      "y": 1,
-      "width": 8,
-      "height": 6,
-      "properties": {
-        "metrics": [
-          [ "AWS/ApiGateway", "5XXError", "ApiName", "http://virtual-dealer-backend.vpssalomo.cloud/", { "stat": "Sum", "color": "#d13212", "label": "5XX Errors" } ],
-          [ ".", "4XXError", ".", ".", { "stat": "Sum", "color": "#ff9896", "label": "4XX Errors" } ]
-        ],
-        "view": "timeSeries",
-        "stacked": false,
-        "region": "ap-southeast-1",
-        "title": "Error Rate"
-      }
-    },
-    {
-      "type": "metric",
-      "x": 16,
-      "y": 1,
-      "width": 8,
-      "height": 6,
-      "properties": {
-        "metrics": [
-          [ "AWS/ApiGateway", "Latency", "ApiName", "http://virtual-dealer-backend.vpssalomo.cloud/", { "stat": "p50", "label": "p50" } ],
-          [ "...", { "stat": "p95", "label": "p95" } ],
-          [ "...", { "stat": "p99", "label": "p99" } ]
-        ],
-        "view": "timeSeries",
-        "stacked": false,
-        "region": "ap-southeast-1",
-        "title": "Latency Percentiles"
-      }
-    },
+  {
+    "type": "metric",
+    "x": 0,
+    "y": 1,
+    "width": 12,
+    "height": 6,
+    "properties": {
+      "metrics": [
+        [ "AWS/EC2", "NetworkIn", "InstanceId", "i-0aac1ba55c78b2d3b", { "stat": "Sum", "label": "Network In" } ],
+        [ ".", "NetworkOut", ".", ".", { "stat": "Sum", "label": "Network Out" } ]
+      ],
+      "view": "timeSeries",
+      "stacked": false,
+      "region": "ap-southeast-1",
+      "title": "Network Traffic"
+    }
+  },
+  {
+    "type": "metric",
+    "x": 16,
+    "y": 1,
+    "width": 12,
+    "height": 6,
+    "properties": {
+      "metrics": [
+        [ "CustomMetrics", "RequestCount", "Service", "Backend", { "stat": "Sum", "label": "Request Rate" } ],
+        [ ".", "ErrorCount", ".", ".", { "stat": "Sum", "label": "Errors" } ]
+      ],
+      "view": "timeSeries",
+      "stacked": false,
+      "region": "ap-southeast-1",
+      "title": "Application Requests & Errors"
+    }
+  },
     {
       "type": "text",
       "x": 0,
@@ -68,7 +51,7 @@
       "width": 24,
       "height": 1,
       "properties": {
-        "markdown": "\n# 🏗️ Infrastructure (EC2, DynamoDB, S3)\n"
+        "markdown": "# 🏗️ Infrastructure (EC2, DynamoDB, S3)"
       }
     },
     {
@@ -79,7 +62,7 @@
       "height": 6,
       "properties": {
         "metrics": [
-          [ "AWS/EC2", "CPUUtilization", "InstanceId", "<ID_INSTANCE_EC2_KAMU>", { "stat": "Average" } ]
+          [ "AWS/EC2", "CPUUtilization", "InstanceId", "i-0aac1ba55c78b2d3b", { "stat": "Average", "label": "EC2 CPU" } ]
         ],
         "view": "timeSeries",
         "stacked": false,
@@ -95,13 +78,13 @@
       "height": 6,
       "properties": {
         "metrics": [
-          [ "AWS/DynamoDB", "ConsumedReadCapacityUnits", "TableName", "virtual-dealer-chat-logs", { "stat": "Sum", "yAxis": "left", "label": "Read Capacity" } ],
-          [ ".", "ConsumedWriteCapacityUnits", ".", ".", { "stat": "Sum", "yAxis": "right", "label": "Write Capacity" } ]
+          [ "AWS/DynamoDB", "ConsumedReadCapacityUnits", "TableName", "virtual-dealer-chat-logs", { "stat": "Sum", "yAxis": "left", "label": "Chat Logs - Read" } ],
+          [ ".", "ConsumedWriteCapacityUnits", ".", ".", { "stat": "Sum", "yAxis": "right", "label": "Chat Logs - Write" } ]
         ],
         "view": "timeSeries",
         "stacked": false,
         "region": "ap-southeast-1",
-        "title": "DynamoDB Consumed Capacity"
+        "title": "DynamoDB - Chat Logs Capacity"
       }
     },
     {
@@ -112,92 +95,72 @@
       "height": 6,
       "properties": {
         "metrics": [
-          [ "AWS/S3", "BucketSizeBytes", "StorageType", "StandardStorage", "BucketName", "virtual-dealer-cars-rag-prod", { "stat": "Average" } ],
-          [ ".", ".", ".", ".", ".", "<NAMA_BUCKET_S3_VECTOR>", { "stat": "Average" } ]
+          [ "AWS/DynamoDB", "ConsumedReadCapacityUnits", "TableName", "virtual-dealer-leads", { "stat": "Sum", "yAxis": "left", "label": "Leads - Read" } ],
+          [ ".", "ConsumedWriteCapacityUnits", ".", ".", { "stat": "Sum", "yAxis": "right", "label": "Leads - Write" } ]
         ],
         "view": "timeSeries",
         "stacked": false,
         "region": "ap-southeast-1",
-        "title": "S3 & S3 Vector Bucket Size"
+        "title": "DynamoDB - Leads Capacity"
       }
     },
     {
-      "type": "text",
+      "type": "metric",
       "x": 0,
       "y": 14,
-      "width": 24,
-      "height": 1,
-      "properties": {
-        "markdown": "\n# 🤖 AI / RAG Usage (via Langfuse Custom Metrics)\n"
-      }
-    },
-    {
-      "type": "metric",
-      "x": 0,
-      "y": 15,
-      "width": 8,
-      "height": 6,
-      "properties": {
-        "metrics": [
-          [ "Langfuse/AI", "BedrockTokenConsumption", "Model", "<NAMA_MODEL_LLM_KAMU>", { "stat": "Sum" } ]
-        ],
-        "view": "timeSeries",
-        "stacked": true,
-        "region": "ap-southeast-1",
-        "title": "Bedrock Token Consumption"
-      }
-    },
-    {
-      "type": "metric",
-      "x": 8,
-      "y": 15,
-      "width": 8,
-      "height": 6,
-      "properties": {
-        "metrics": [
-          [ "Langfuse/AI", "VectorQueryLatency", "DB", "<NAMA_VECTOR_DB_KAMU>", { "stat": "Average" } ]
-        ],
-        "view": "timeSeries",
-        "stacked": false,
-        "region": "ap-southeast-1",
-        "title": "Vector Query Latency"
-      }
-    },
-    {
-      "type": "metric",
-      "x": 16,
-      "y": 15,
-      "width": 8,
-      "height": 6,
-      "properties": {
-        "metrics": [
-          [ "Langfuse/AI", "RAGRequests", "Tenant", "All", { "stat": "Sum" } ]
-        ],
-        "view": "timeSeries",
-        "stacked": false,
-        "region": "ap-southeast-1",
-        "title": "Total RAG Requests"
-      }
-    },
-    {
-      "type": "text",
-      "x": 0,
-      "y": 21,
-      "width": 24,
-      "height": 1,
-      "properties": {
-        "markdown": "\n# 💰 Cost & Billing\n"
-      }
-    },
-    {
-      "type": "metric",
-      "x": 0,
-      "y": 22,
       "width": 12,
       "height": 6,
       "properties": {
         "metrics": [
-          [ "AWS/Billing", "EstimatedCharges", "Currency", "USD", { "stat": "Maximum" } ]
+          [ "AWS/S3", "BucketSizeBytes", "StorageType", "StandardStorage", "BucketName", "virtual-dealer-cars-rag-prod", { "stat": "Average", "label": "RAG Prod" } ],
+          [ ".", ".", ".", ".", ".", "virtual-dealer-cars-views-prod", { "stat": "Average", "label": "Views Prod" } ],
+          [ ".", ".", ".", ".", ".", "virtual-dealer-cars-prod", { "stat": "Average", "label": "Cars Prod" } ],
+          [ ".", ".", ".", ".", ".", "virtual-dealer-prod", { "stat": "Average", "label": "Vector Prod" } ]
+        ],
+        "view": "bar",
+        "stacked": false,
+        "region": "ap-southeast-1",
+        "title": "S3 Buckets Storage Size"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 14,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [ "AWS/S3", "NumberOfObjects", "BucketName", "virtual-dealer-cars-rag-prod", { "stat": "Average", "label": "RAG Prod" } ],
+          [ ".", ".", ".", "virtual-dealer-cars-views-prod", { "stat": "Average", "label": "Views Prod" } ],
+          [ ".", ".", ".", "virtual-dealer-cars-prod", { "stat": "Average", "label": "Cars Prod" } ],
+          [ ".", ".", ".", "virtual-dealer-prod", { "stat": "Average", "label": "Vector Prod" } ]
+        ],
+        "view": "bar",
+        "stacked": false,
+        "region": "ap-southeast-1",
+        "title": "S3 Object Count"
+      }
+    },
+    {
+      "type": "text",
+      "x": 0,
+      "y": 27,
+      "width": 24,
+      "height": 1,
+      "properties": {
+        "markdown": "# 💰 Cost & Billing"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 28,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [ "AWS/Billing", "EstimatedCharges", "Currency", "USD", { "stat": "Maximum", "label": "Total MTD" } ]
         ],
         "view": "singleValue",
         "region": "ap-southeast-1",
@@ -207,15 +170,15 @@
     {
       "type": "metric",
       "x": 12,
-      "y": 22,
+      "y": 28,
       "width": 12,
       "height": 6,
       "properties": {
         "metrics": [
-          [ "AWS/Billing", "EstimatedCharges", "ServiceName", "AmazonEC2", "Currency", "USD", { "stat": "Maximum" } ],
-          [ ".", ".", ".", "AmazonDynamoDB", ".", ".", { "stat": "Maximum" } ],
-          [ ".", ".", ".", "AmazonS3", ".", ".", { "stat": "Maximum" } ],
-          [ "Langfuse/Cost", "EstimatedCharges", "ServiceName", "LLM", "Currency", "USD", { "stat": "Maximum" } ]
+          [ "AWS/Billing", "EstimatedCharges", "ServiceName", "AmazonEC2", "Currency", "USD", { "stat": "Maximum", "label": "EC2" } ],
+          [ ".", ".", ".", "AmazonDynamoDB", ".", ".", { "stat": "Maximum", "label": "DynamoDB" } ],
+          [ ".", ".", ".", "AmazonS3", ".", ".", { "stat": "Maximum", "label": "S3" } ],
+          [ ".", ".", ".", "AmazonApiGateway", ".", ".", { "stat": "Maximum", "label": "API Gateway" } ]
         ],
         "view": "pie",
         "region": "ap-southeast-1",
@@ -225,21 +188,21 @@
     {
       "type": "text",
       "x": 0,
-      "y": 28,
+      "y": 34,
       "width": 24,
       "height": 1,
       "properties": {
-        "markdown": "\n# 📜 Recent Logs & 🚨 Alarms\n"
+        "markdown": "# 📜 Recent Logs & 🚨 Alarms"
       }
     },
     {
       "type": "log",
       "x": 0,
-      "y": 29,
+      "y": 35,
       "width": 12,
       "height": 8,
       "properties": {
-        "query": "SOURCE '<NAMA_LOG_GROUP_KAMU>' | fields @timestamp, tenantId, @message\n| filter @message like /(?i)(ERROR|WARN)/\n| sort @timestamp desc\n| limit 50",
+        "query": "SOURCE 'virtual-dealer-logs' | fields @timestamp, tenantId, @message\n| filter @message like /(?i)(ERROR|WARN)/\n| sort @timestamp desc\n| limit 50",
         "region": "ap-southeast-1",
         "title": "Recent Error/Warn Logs (Multi-tenant)",
         "view": "table"
@@ -248,13 +211,12 @@
     {
       "type": "alarm",
       "x": 12,
-      "y": 29,
+      "y": 35,
       "width": 12,
       "height": 8,
       "properties": {
         "alarms": [
-          "<ARN_ALARM_CPU_KAMU>",
-          "<ARN_ALARM_DYNAMODB_KAMU>"
+          "arn:aws:cloudwatch:ap-southeast-1:651706737289:alarm:virtuak-dealer-cpu-alert"
         ],
         "title": "System Alarms Status"
       }
