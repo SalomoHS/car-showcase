@@ -5,6 +5,8 @@ import TestDriveModal from './TestDriveModal';
 import AvatarResponse from './AvatarResponse';
 import VoicePanel from './VoicePanel';
 
+const uuid = () => (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => { const r = Math.random() * 16 | 0; const v = c === 'x' ? r : (r & 0x3 | 0x8); return v.toString(16); });
+
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 const CDN_CARS = process.env.REACT_APP_CDN_CARS || '';
 const CDN_VIEWS = process.env.REACT_APP_CDN_VIEWS || '';
@@ -105,7 +107,7 @@ const CarShowcase = () => {
   // Aria chat state (text mode)
   const [avatarStatus, setAvatarStatus] = useState('idle'); // idle | thinking
   const [chatMessages, setChatMessages] = useState([]); // { role: 'user' | 'ai', text: string }
-  const [chatSessionId, setChatSessionId] = useState(() => crypto.randomUUID());
+  const [chatSessionId, setChatSessionId] = useState(() => uuid());
 
   // Mode: 'chat' (text) | 'voice' (Agora Conversational AI)
   const [mode, setMode] = useState('chat');
