@@ -13,6 +13,19 @@ services:
       - CORS_ORIGINS=http://localhost:3000,http://localhost,http://127.0.0.1:3000,http://127.0.0.1,http://47.129.46.49:3000,http://47.129.46.49:8000
     restart: unless-stopped
 
+  langfuse-metrics:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["python", "run_langfuse_metrics.py"]
+    env_file:
+      - ./backend/.env
+    environment:
+      - LANGFUSE_METRICS_INTERVAL=300
+    restart: unless-stopped
+    depends_on:
+      - backend
+
   frontend:
     build:
       context: ./frontend

@@ -326,6 +326,155 @@
         ],
         "title": "System Alarms Status"
       }
+    },
+    {
+      "type": "text",
+      "x": 0,
+      "y": 54,
+      "width": 24,
+      "height": 1,
+      "properties": {
+        "markdown": "# 🤖 Langfuse LLM Analytics"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 55,
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [ "LangfuseMetrics", "TotalCostUSD", "Service", "Langfuse", { "stat": "Sum", "period": 300, "label": "Total Cost (1h)" } ]
+        ],
+        "view": "singleValue",
+        "region": "ap-southeast-1",
+        "title": "Total LLM Cost (USD)",
+        "period": 300,
+        "setPeriodToGraph": false
+      }
+    },
+    {
+      "type": "metric",
+      "x": 8,
+      "y": 55,
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [ "LangfuseMetrics", "TotalTokens", "Service", "Langfuse", { "stat": "Sum", "period": 300, "label": "Total Tokens" } ]
+        ],
+        "view": "singleValue",
+        "region": "ap-southeast-1",
+        "title": "Total Token Usage",
+        "period": 300,
+        "setPeriodToGraph": false
+      }
+    },
+    {
+      "type": "metric",
+      "x": 16,
+      "y": 55,
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [ "LangfuseMetrics", "P95ResponseTimeMs", "Service", "Langfuse", { "stat": "Average", "period": 300, "label": "P95 Response Time" } ]
+        ],
+        "view": "singleValue",
+        "region": "ap-southeast-1",
+        "title": "P95 Response Time (ms)",
+        "period": 300,
+        "setPeriodToGraph": false
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 61,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [ "LangfuseMetrics", "TotalCostUSD", "Service", "Langfuse", { "stat": "Sum", "period": 300, "label": "Cost (1h)" } ]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "ap-southeast-1",
+        "title": "LLM Cost Usage Time Series",
+        "period": 300
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 61,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [ "LangfuseMetrics", "TotalInputTokens", "Service", "Langfuse", { "stat": "Sum", "period": 300, "label": "Input Tokens" } ],
+          [ ".", "TotalOutputTokens", ".", ".", { "stat": "Sum", "period": 300, "label": "Output Tokens" } ]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "ap-southeast-1",
+        "title": "Token Usage Time Series",
+        "period": 300
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 67,
+      "width": 24,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [ "LangfuseMetrics", "P95ResponseTimeMs", "Service", "Langfuse", { "stat": "Average", "period": 300, "label": "P95 Response Time" } ]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "ap-southeast-1",
+        "title": "P95 Average Response Time",
+        "period": 300
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 73,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [ "LangfuseMetrics", "TotalTraces", "Service", "Langfuse", { "stat": "Sum", "period": 300, "label": "Traces" } ],
+          [ ".", "TotalGenerations", ".", ".", { "stat": "Sum", "period": 300, "label": "Generations" } ]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "ap-southeast-1",
+        "title": "LLM Request Count",
+        "period": 300
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 73,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [ "LangfuseMetrics", "TotalInputTokens", "Service", "Langfuse", { "stat": "Sum", "period": 86400, "label": "Input" } ],
+          [ ".", "TotalOutputTokens", ".", ".", { "stat": "Sum", "period": 86400, "label": "Output" } ]
+        ],
+        "view": "bar",
+        "stacked": false,
+        "region": "ap-southeast-1",
+        "title": "Daily Token Usage Breakdown",
+        "period": 86400
+      }
     }
   ]
 }
