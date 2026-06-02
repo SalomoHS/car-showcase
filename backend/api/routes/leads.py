@@ -18,13 +18,18 @@ async def create_lead(
         await cw.increment_error_count()
         raise HTTPException(status_code=400, detail="name, phone and location are required")
 
+    
+    session_id = payload.session_id
+    from core.logger import session_id_var
+    session_id_var.set(session_id)
+
     lead = Lead(**payload.model_dump())
     doc = lead.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
-
+    logger.info(f"New test-drive lead: {lead.name} ({lead.phone}) — {lead.car_name} @ {lead.location}")
     await db.put_item(settings.T_LEADS, doc)
     await cw.increment_request_count()
-    logger.info(f"New test-drive lead: {lead.name} ({lead.phone}) — {lead.car_name} @ {lead.location}")
+    
     return lead
 
 @router.get("/", response_model=List[Lead])

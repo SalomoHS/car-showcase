@@ -5,7 +5,7 @@ import watchtower
 import contextvars
 from core.config import settings
 
-session_id_var = contextvars.ContextVar("session_id", default="default-stream")
+session_id_var = contextvars.ContextVar("session_id")
 
 class SessionIdFilter(logging.Filter):
     def filter(self, record):
@@ -14,7 +14,7 @@ class SessionIdFilter(logging.Filter):
 
 class DynamicCloudWatchLogHandler(watchtower.CloudWatchLogHandler):
     def _get_stream_name(self, record):
-        return getattr(record, "session_id", "default-stream")
+        return getattr(record, "session_id")
 
 # Initialize Boto3 CloudWatch client using settings
 try:

@@ -36,6 +36,7 @@ class LeadCreate(BaseModel):
     car_name: str
     preferred_date: Optional[str] = None
     notes: Optional[str] = None
+    session_id: Optional[str] = ''
 
 class ChatTextRequest(BaseModel):
     message: str

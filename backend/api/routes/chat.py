@@ -27,7 +27,7 @@ async def chat_text(
         await cw.increment_error_count()
         raise HTTPException(status_code=400, detail="message cannot be empty")
 
-    session_id = payload.session_id or str(uuid.uuid4())
+    session_id = payload.session_id  
     from core.logger import session_id_var
     session_id_var.set(session_id)
     logger.info(f"chat_text: started processing request for session {session_id}")

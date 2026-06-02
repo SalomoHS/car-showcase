@@ -817,6 +817,7 @@ const CarShowcase = () => {
       {testDriveOpen && (
         <TestDriveModal
           car={selectedCar}
+          sessionId={chatSessionId}
           onClose={() => setTestDriveOpen(false)}
         />
       )}

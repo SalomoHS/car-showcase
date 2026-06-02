@@ -4,7 +4,7 @@ import axios from 'axios';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
-const TestDriveModal = ({ car, onClose }) => {
+const TestDriveModal = ({ car, sessionId, onClose }) => {
   const [form, setForm] = useState({
     name: '',
     phone: '',
@@ -79,6 +79,7 @@ const TestDriveModal = ({ car, onClose }) => {
     setSubmitting(true);
     try {
       await axios.post(`${API}/leads`, {
+        session_id: sessionId,
         name: form.name.trim(),
         phone: form.phone.trim(),
         location: form.location.trim(),

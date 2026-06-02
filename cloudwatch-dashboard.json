@@ -7,43 +7,42 @@
       "width": 24,
       "height": 1,
       "properties": {
-        "markdown": "# 🟢 Application Health"
+        "markdown": "# 💰 Cost & Billing"
       }
     },
-  {
-    "type": "metric",
-    "x": 0,
-    "y": 1,
-    "width": 12,
-    "height": 6,
-    "properties": {
-      "metrics": [
-        [ "AWS/EC2", "NetworkIn", "InstanceId", "i-0aac1ba55c78b2d3b", { "stat": "Sum", "label": "Network In" } ],
-        [ ".", "NetworkOut", ".", ".", { "stat": "Sum", "label": "Network Out" } ]
-      ],
-      "view": "timeSeries",
-      "stacked": false,
-      "region": "ap-southeast-1",
-      "title": "Network Traffic"
-    }
-  },
-  {
-    "type": "metric",
-    "x": 16,
-    "y": 1,
-    "width": 12,
-    "height": 6,
-    "properties": {
-      "metrics": [
-        [ "CustomMetrics", "RequestCount", "Service", "Backend", { "stat": "Sum", "label": "Request Rate" } ],
-        [ ".", "ErrorCount", ".", ".", { "stat": "Sum", "label": "Errors" } ]
-      ],
-      "view": "timeSeries",
-      "stacked": false,
-      "region": "ap-southeast-1",
-      "title": "Application Requests & Errors"
-    }
-  },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 1,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [ "AWS/Billing", "EstimatedCharges", "Currency", "USD", { "stat": "Maximum", "label": "Total MTD" } ]
+        ],
+        "view": "singleValue",
+        "region": "us-east-1",
+        "title": "Total Cost MTD (USD)"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 1,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [ "AWS/Billing", "EstimatedCharges", "ServiceName", "AmazonEC2", "Currency", "USD", { "stat": "Maximum", "label": "EC2" } ],
+          [ ".", ".", ".", "AmazonDynamoDB", ".", ".", { "stat": "Maximum", "label": "DynamoDB" } ],
+          [ ".", ".", ".", "AmazonS3", ".", ".", { "stat": "Maximum", "label": "S3" } ],
+          [ ".", ".", ".", "AmazonApiGateway", ".", ".", { "stat": "Maximum", "label": "API Gateway" } ]
+        ],
+        "view": "pie",
+        "region": "us-east-1",
+        "title": "Cost Breakdown per Service"
+      }
+    },
     {
       "type": "text",
       "x": 0,
@@ -51,7 +50,7 @@
       "width": 24,
       "height": 1,
       "properties": {
-        "markdown": "# 🏗️ Infrastructure (EC2, DynamoDB, S3)"
+        "markdown": "# �🟢 Application Health"
       }
     },
     {
@@ -78,6 +77,50 @@
       "height": 6,
       "properties": {
         "metrics": [
+          [ "AWS/EC2", "NetworkIn", "InstanceId", "i-0aac1ba55c78b2d3b", { "stat": "Sum", "label": "Network In" } ],
+          [ ".", "NetworkOut", ".", ".", { "stat": "Sum", "label": "Network Out" } ]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "ap-southeast-1",
+        "title": "Network Traffic"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 16,
+      "y": 8,
+      "width": 8,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [ "CustomMetrics", "RequestCount", "Service", "Backend", { "stat": "Sum", "label": "Request Rate" } ],
+          [ ".", "ErrorCount", ".", ".", { "stat": "Sum", "label": "Errors" } ]
+        ],
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "ap-southeast-1",
+        "title": "Application Requests & Errors"
+      }
+    },
+    {
+      "type": "text",
+      "x": 0,
+      "y": 14,
+      "width": 24,
+      "height": 1,
+      "properties": {
+        "markdown": "# 🏗️ Database (DynamoDB & S3)"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 15,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "metrics": [
           [ "AWS/DynamoDB", "ConsumedReadCapacityUnits", "TableName", "virtual-dealer-chat-logs", { "stat": "Sum", "yAxis": "left", "label": "Chat Logs - Read" } ],
           [ ".", "ConsumedWriteCapacityUnits", ".", ".", { "stat": "Sum", "yAxis": "right", "label": "Chat Logs - Write" } ]
         ],
@@ -89,9 +132,9 @@
     },
     {
       "type": "metric",
-      "x": 16,
-      "y": 8,
-      "width": 8,
+      "x": 12,
+      "y": 15,
+      "width": 12,
       "height": 6,
       "properties": {
         "metrics": [
@@ -107,7 +150,113 @@
     {
       "type": "metric",
       "x": 0,
-      "y": 14,
+      "y": 21,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [ "AWS/DynamoDB", "ItemCount", "TableName", "virtual-dealer-chat-logs", { "stat": "Average", "label": "Chat Logs" } ],
+          [ ".", ".", ".", "virtual-dealer-leads", { "stat": "Average", "label": "Leads" } ]
+        ],
+        "view": "bar",
+        "stacked": false,
+        "region": "ap-southeast-1",
+        "title": "DynamoDB Item Count"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 21,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [ "AWS/DynamoDB", "TableSizeBytes", "TableName", "virtual-dealer-chat-logs", { "stat": "Average", "label": "Chat Logs" } ],
+          [ ".", ".", ".", "virtual-dealer-leads", { "stat": "Average", "label": "Leads" } ]
+        ],
+        "view": "bar",
+        "stacked": false,
+        "region": "ap-southeast-1",
+        "title": "DynamoDB Table Size (Bytes)"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 27,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [ "AWS/DynamoDB", "ItemCount", "TableName", "virtual-dealer-chat-logs", { "stat": "Maximum", "label": "Chat Logs" } ],
+          [ ".", ".", ".", "virtual-dealer-leads", { "stat": "Maximum", "label": "Leads" } ]
+        ],
+        "view": "bar",
+        "stacked": false,
+        "region": "ap-southeast-1",
+        "title": "DynamoDB Item Count (Since Creation)"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 27,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [ "AWS/DynamoDB", "TableSizeBytes", "TableName", "virtual-dealer-chat-logs", { "stat": "Maximum", "label": "Chat Logs" } ],
+          [ ".", ".", ".", "virtual-dealer-leads", { "stat": "Maximum", "label": "Leads" } ]
+        ],
+        "view": "bar",
+        "stacked": false,
+        "region": "ap-southeast-1",
+        "title": "DynamoDB Table Size (Since Creation)"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 33,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [ "AWS/S3", "BucketSizeBytes", "StorageType", "StandardStorage", "BucketName", "virtual-dealer-cars-rag-prod", { "stat": "Maximum", "label": "RAG Prod" } ],
+          [ ".", ".", ".", ".", ".", "virtual-dealer-cars-views-prod", { "stat": "Maximum", "label": "Views Prod" } ],
+          [ ".", ".", ".", ".", ".", "virtual-dealer-cars-prod", { "stat": "Maximum", "label": "Cars Prod" } ],
+          [ ".", ".", ".", ".", ".", "virtual-dealer-prod", { "stat": "Maximum", "label": "Vector Prod" } ]
+        ],
+        "view": "bar",
+        "stacked": false,
+        "region": "ap-southeast-1",
+        "title": "S3 Buckets Storage Size (Since Creation)"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12,
+      "y": 33,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "metrics": [
+          [ "AWS/S3", "NumberOfObjects", "BucketName", "virtual-dealer-cars-rag-prod", { "stat": "Maximum", "label": "RAG Prod" } ],
+          [ ".", ".", ".", "virtual-dealer-cars-views-prod", { "stat": "Maximum", "label": "Views Prod" } ],
+          [ ".", ".", ".", "virtual-dealer-cars-prod", { "stat": "Maximum", "label": "Cars Prod" } ],
+          [ ".", ".", ".", "virtual-dealer-prod", { "stat": "Maximum", "label": "Vector Prod" } ]
+        ],
+        "view": "bar",
+        "stacked": false,
+        "region": "ap-southeast-1",
+        "title": "S3 Object Count (Since Creation)"
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0,
+      "y": 39,
       "width": 12,
       "height": 6,
       "properties": {
@@ -126,7 +275,7 @@
     {
       "type": "metric",
       "x": 12,
-      "y": 14,
+      "y": 39,
       "width": 12,
       "height": 6,
       "properties": {
@@ -145,50 +294,7 @@
     {
       "type": "text",
       "x": 0,
-      "y": 27,
-      "width": 24,
-      "height": 1,
-      "properties": {
-        "markdown": "# 💰 Cost & Billing"
-      }
-    },
-    {
-      "type": "metric",
-      "x": 0,
-      "y": 28,
-      "width": 12,
-      "height": 6,
-      "properties": {
-        "metrics": [
-          [ "AWS/Billing", "EstimatedCharges", "Currency", "USD", { "stat": "Maximum", "label": "Total MTD" } ]
-        ],
-        "view": "singleValue",
-        "region": "ap-southeast-1",
-        "title": "Total Cost MTD (USD)"
-      }
-    },
-    {
-      "type": "metric",
-      "x": 12,
-      "y": 28,
-      "width": 12,
-      "height": 6,
-      "properties": {
-        "metrics": [
-          [ "AWS/Billing", "EstimatedCharges", "ServiceName", "AmazonEC2", "Currency", "USD", { "stat": "Maximum", "label": "EC2" } ],
-          [ ".", ".", ".", "AmazonDynamoDB", ".", ".", { "stat": "Maximum", "label": "DynamoDB" } ],
-          [ ".", ".", ".", "AmazonS3", ".", ".", { "stat": "Maximum", "label": "S3" } ],
-          [ ".", ".", ".", "AmazonApiGateway", ".", ".", { "stat": "Maximum", "label": "API Gateway" } ]
-        ],
-        "view": "pie",
-        "region": "ap-southeast-1",
-        "title": "Cost Breakdown per Service"
-      }
-    },
-    {
-      "type": "text",
-      "x": 0,
-      "y": 34,
+      "y": 45,
       "width": 24,
       "height": 1,
       "properties": {
@@ -198,7 +304,7 @@
     {
       "type": "log",
       "x": 0,
-      "y": 35,
+      "y": 46,
       "width": 12,
       "height": 8,
       "properties": {
@@ -211,7 +317,7 @@
     {
       "type": "alarm",
       "x": 12,
-      "y": 35,
+      "y": 46,
       "width": 12,
       "height": 8,
       "properties": {

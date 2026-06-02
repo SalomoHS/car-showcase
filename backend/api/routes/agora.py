@@ -65,7 +65,7 @@ async def agora_start(
         logger.info("agora start: RAG not needed for car=%r", payload.car_name)
 
     greeting = f"Hi! I'm Aria. I see you're checking out the {payload.car_name}. Ask me anything about it."
-    session_id = (payload.session_id or '').strip() or str(uuid.uuid4())
+    session_id = (payload.session_id or '').strip()  
     from core.logger import session_id_var
     session_id_var.set(session_id)
     logger.info(f"agora_start: initializing voice session {session_id}")
