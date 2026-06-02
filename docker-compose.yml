@@ -10,7 +10,7 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      - CORS_ORIGINS=http://localhost:3000,http://localhost,http://127.0.0.1:3000,http://127.0.0.1,http://http://virtual-dealer.vpssalomo.cloud/:3000,http://http://virtual-dealer.vpssalomo.cloud/:8000
+      - CORS_ORIGINS=*
     restart: unless-stopped
 
   langfuse-metrics:
