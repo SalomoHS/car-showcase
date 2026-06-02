@@ -2,7 +2,9 @@ import os
 import asyncio
 import aiohttp
 import aioboto3
+import json
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
 from typing import Optional
 import logging
 
@@ -11,6 +13,7 @@ from core.config import settings
 logger = logging.getLogger("langfuse-metrics")
 
 LANGFUSE_NAMESPACE = "LangfuseMetrics"
+LAST_FETCH_FILE = Path(__file__).parent.parent / "last_fetch_timestamp.json"
 
 class LangfuseMetricsService:
     def __init__(self):
@@ -19,6 +22,25 @@ class LangfuseMetricsService:
         self._base_url = settings.LANGFUSE_BASE_URL
         self._secret_key = settings.LANGFUSE_SECRET_KEY
         self._public_key = settings.LANGFUSE_PUBLIC_KEY
+
+    def _get_last_fetch_timestamp(self) -> datetime:
+        try:
+            if LAST_FETCH_FILE.exists():
+                with open(LAST_FETCH_FILE, "r") as f:
+                    data = json.load(f)
+                    ts = data.get("last_fetch")
+                    if ts:
+                        return datetime.fromisoformat(ts)
+        except Exception as e:
+            logger.warning(f"Failed to read last fetch timestamp: {e}")
+        return datetime.now(timezone.utc) - timedelta(hours=1)
+
+    def _save_last_fetch_timestamp(self, timestamp: datetime):
+        try:
+            with open(LAST_FETCH_FILE, "w") as f:
+                json.dump({"last_fetch": timestamp.isoformat()}, f)
+        except Exception as e:
+            logger.error(f"Failed to save last fetch timestamp: {e}")
 
     def _get_cw_session(self) -> aioboto3.Session:
         if self._cw_session is None:
@@ -112,8 +134,10 @@ class LangfuseMetricsService:
         return round(input_cost + output_cost, 6)
 
     async def fetch_and_push_metrics(self) -> dict:
+        start_time = self._get_last_fetch_timestamp()
         end_time = datetime.now(timezone.utc)
-        start_time = end_time - timedelta(hours=1)
+        
+        self._save_last_fetch_timestamp(end_time)
         
         traces_data = await self._fetch_traces(start_time, end_time)
         observations_data = await self._fetch_observations(start_time, end_time)

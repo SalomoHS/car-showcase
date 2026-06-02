@@ -4,7 +4,7 @@ from core.config import settings
 from core.logger import logger
 from api.router import api_router
 
-app = FastAPI()
+app = FastAPI(docs_url=None, redoc_url=None)
 
 app.include_router(api_router, prefix="/api")
 

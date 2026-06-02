@@ -23,6 +23,8 @@ services:
     environment:
       - LANGFUSE_METRICS_INTERVAL=300
     restart: unless-stopped
+    volumes:
+      - ./backend/last_fetch_timestamp.json:/app/last_fetch_timestamp.json
     depends_on:
       - backend
 
