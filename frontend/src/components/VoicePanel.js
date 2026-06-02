@@ -196,7 +196,7 @@ const VoicePanel = ({ car, sessionId, onSessionId, onAngleHint, onCarRecommendat
     }
     if (agentIdRef.current) {
       try {
-        await axios.post(`${API}/agora/stop`, { agent_id: agentIdRef.current }, { timeout: 10000 });
+        await axios.post(`${API}/agora/stop`, { agent_id: agentIdRef.current, session_id: sessionIdRef.current }, { timeout: 10000 });
       } catch (e) {
         /* ignore — agent will idle-timeout anyway */
       }

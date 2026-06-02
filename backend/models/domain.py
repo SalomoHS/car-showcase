@@ -84,3 +84,4 @@ class AgoraStartResponse(BaseModel):
 
 class AgoraStopRequest(BaseModel):
     agent_id: str
+    session_id: Optional[str] = None

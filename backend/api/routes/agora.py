@@ -51,6 +51,11 @@ async def agora_start(
         car_tagline=payload.car_tagline or '',
     ) + " Keep replies under 50 words because they will be spoken aloud."
 
+    from core.logger import session_id_var
+    session_id = (payload.session_id or '').strip()
+    session_id_var.set(session_id)
+    logger.info(f"agora_start: initializing voice session {session_id}")
+
     rag_context, used_rag = await llm.build_rag_context_for_voice(payload.car_name)
     if used_rag and rag_context:
         system_prompt = (
@@ -65,10 +70,6 @@ async def agora_start(
         logger.info("agora start: RAG not needed for car=%r", payload.car_name)
 
     greeting = f"Hi! I'm Aria. I see you're checking out the {payload.car_name}. Ask me anything about it."
-    session_id = (payload.session_id or '').strip()  
-    from core.logger import session_id_var
-    session_id_var.set(session_id)
-    logger.info(f"agora_start: initializing voice session {session_id}")
     agent_name = f"aria-{payload.car_id}-{suffix}"
 
     backend_public_url = settings.PUBLIC_BACKEND_URL or settings.REACT_APP_BACKEND_URL or ''
@@ -162,6 +163,11 @@ async def agora_start(
 async def agora_stop(payload: AgoraStopRequest):
     if not payload.agent_id:
         raise HTTPException(status_code=400, detail="agent_id is required")
+
+    from core.logger import session_id_var
+    session_id = (payload.session_id or '').strip()
+    session_id = (payload.session_id or '').strip()
+    session_id_var.set(session_id)
 
     url = f"{AGORA_API_BASE}/{settings.AGORA_APP_ID}/agents/{payload.agent_id}/leave"
     headers = {

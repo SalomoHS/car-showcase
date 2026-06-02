@@ -9,7 +9,7 @@ import json as _json
 from models.domain import ChatTextRequest, ChatTextResponse, OpenAIChatRequest, OpenAIChatMessage
 from api.deps import get_db_service, get_llm_service, get_cw_metrics_service, DynamoDBService, LLMService, CloudWatchMetricsService
 from core.config import settings
-from core.logger import logger, get_langfuse_client
+from core.logger import logger, get_langfuse_client, session_id_var
 
 router = APIRouter()
 
@@ -443,6 +443,7 @@ async def get_pending_angle(
     session_id: str,
     db: DynamoDBService = Depends(get_db_service)
 ):
+    session_id_var.set(session_id)
     try:
         turns = await db.query_by_session(settings.T_CHAT, session_id=session_id, ascending=False, limit=1)
     except Exception:
