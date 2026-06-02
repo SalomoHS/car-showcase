@@ -51,21 +51,30 @@ def _keyword_classify(question: str) -> bool:
 async def classify_need_rag(anthropic_client, model: str, question: str) -> bool:
     """Returns True if RAG retrieval should be invoked. Defaults to False on any error.
 
+    Uses a two-tier approach:
+    1. Fast keyword-based classification (zero latency, zero cost)
+    2. LLM-based classification as fallback for ambiguous cases
+
     `anthropic_client` and `model` are kept for API stability so the caller can
     swap in an LLM-based implementation later without code changes.
     """
-    from core.logger import get_langfuse_client
-    from contextlib import ExitStack
-    langfuse = get_langfuse_client()
-    
     q = (question or "").strip()
     if not q:
         return False
-        
+
+    if _keyword_classify(q):
+        return True
+
+    return await _llm_classify(anthropic_client, model, q)
+
+
+async def _llm_classify(anthropic_client, model: str, question: str) -> bool:
+    """LLM-based classifier for ambiguous cases that keyword classification doesn't catch."""
+    from core.logger import get_langfuse_client
+    from contextlib import ExitStack
+    langfuse = get_langfuse_client()
+
     try:
-        # Using LLM as requested. Increasing max_tokens because the custom Anthropic 
-        # endpoint enforces extended thinking, which requires more tokens before 
-        # it outputs the final true/false answer.
         with ExitStack() as stack:
             generation = None
             if langfuse:
@@ -73,34 +82,33 @@ async def classify_need_rag(anthropic_client, model: str, question: str) -> bool
                     name="classifier_llm",
                     as_type="generation",
                     model=model,
-                    input=q,
+                    input=question,
                 ))
-                
+
             response = await anthropic_client.messages.create(
                 model=model,
                 max_tokens=1000,
                 system="Determine if the user's question requires querying a car details (specification, testimony, price). Reply with only 'true' or 'false'.",
-                messages=[{"role": "user", "content": q}],
+                messages=[{"role": "user", "content": question}],
                 temperature=0.0,
             )
-            
+
             parts = []
             for block in response.content or []:
                 block_type = getattr(block, "type", None) or (block.get("type") if isinstance(block, dict) else None)
                 if block_type == "text":
                     parts.append(getattr(block, "text", None) or (block.get("text") if isinstance(block, dict) else ""))
-            
+
             answer = ("".join(parts)).strip().lower()
             result = "true" in answer
-            
+
             if generation:
                 generation.update(
                     output=answer,
                     metadata={"result": result}
                 )
-                
+
             return result
     except Exception as e:
-        logger.exception("classifier failed; defaulting need_rag=False")
-        # Ensure error state is recorded in langfuse context if we throw
+        logger.exception("LLM classifier failed; defaulting need_rag=False")
         return False

@@ -90,3 +90,5 @@ credentials.json
 
 vercel/
 .agents/
+.kiro/
+.emergent/
