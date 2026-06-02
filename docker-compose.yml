@@ -12,13 +12,13 @@ services:
     environment:
       - CORS_ORIGINS=http://localhost:3000,http://localhost,http://127.0.0.1:3000,http://127.0.0.1
     restart: unless-stopped
+
+  frontend:
     deploy:
       resources:
         limits:
-          cpus: "2"
+          cpus: "0.5"
           memory: 1G
-
-  frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
