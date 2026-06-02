@@ -14,11 +14,6 @@ services:
     restart: unless-stopped
 
   frontend:
-    deploy:
-      resources:
-        limits:
-          cpus: "0.5"
-          memory: 1G
     build:
       context: ./frontend
       dockerfile: Dockerfile
