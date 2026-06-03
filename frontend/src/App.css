@@ -1327,3 +1327,25 @@ html, body, #root {
   .mode-toggle-btn { padding: 0.32rem 0.4rem; }
   .voice-status { font-size: 0.78rem; }
 }
+
+/* ────────── MOBILE-SPECIFIC FIXES ────────── */
+@media (max-width: 768px) {
+  .avatar-response {
+    z-index: 40;
+    bottom: 1.5rem;
+    left: 1rem;
+    width: calc(100% - 2rem);
+  }
+
+  .angle-buttons {
+    bottom: auto;
+    top: 6.5rem;
+    right: 2.5rem;
+    z-index: 15;
+  }
+
+  .bottom-dock {
+    bottom: 1rem;
+    padding-bottom: env(safe-area-inset-bottom, 0.5rem);
+  }
+}
