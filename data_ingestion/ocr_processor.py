@@ -5,9 +5,9 @@ import os
 
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "./shekinah-489217-c432caac7134.json"
 
-project_id = "shekinah-489217"
-location = "us"
-processor_id = "c145af53dca87e13"
+project_id = "..."
+location = "..."
+processor_id = "..."
 
 
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
