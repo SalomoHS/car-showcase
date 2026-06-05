@@ -4,49 +4,83 @@
 
 Virtual Dealer adalah aplikasi AI-powered car showroom yang memungkinkan user berinteraksi dengan chatbot (Aria) untuk menjelajahi mobil. Sistem mendukung dua mode interaksi: **Text Chat** dan **Voice Chat** (via Agora).
 
+All services (Frontend + Backend) are deployed on a single **EC2 instance** behind **Nginx** reverse proxy.
+
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                              Frontend                                │
-│                           (React + Vite)                             │
-└─────────────────────────────┬───────────────────────────────────────┘
-                              │
-                              ▼ HTTPS
+│                            Client Browser                           │
+└─────────────────────────────────────┬───────────────────────────────┘
+                                      │ HTTPS
+                                      ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                           Backend (FastAPI)                         │
-│                                                                      │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌────────────┐ │
-│  │  /chat-text │  │ /agora/start│  │/agora/stop  │  │/llm-proxy  │ │
-│  │             │  │             │  │             │  │            │ │
-│  │  Text Chat  │  │ Voice Agent │  │ Voice Agent │  │ LLM Proxy  │ │
-│  │    Route    │  │    Route    │  │    Route    │  │   Route    │ │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬─────┘ │
-│         │                │                │                │        │
-│         ▼                ▼                ▼                │        │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐        │        │
-│  │  LLMService │  │  LLMService │  │  Agora API  │        │        │
-│  │  + RAG      │  │  + RAG      │  │             │        │        │
-│  └──────┬──────┘  └──────┬──────┘  └─────────────┘        │        │
-│         │                │                                  │        │
-└─────────┼────────────────┼──────────────────────────────────┼────────┘
-          │                │                                  │
-          ▼                ▼                                  ▼
-   ┌────────────┐  ┌────────────┐                    ┌────────────┐
-   │  DynamoDB   │  │    S3      │                    │   Agora    │
-   │  (Chat Logs)│  │  Vectors   │                    │  RTC Cloud  │
-   └────────────┘  └────────────┘                    └────────────┘
-                            │
-                            ▼
-                     ┌────────────┐
-                     │  S3 Vectors │
-                     │  Index      │
-                     └────────────┘
-                            │
-                            ▼
-                     ┌────────────┐
-                     │   Gemini   │
-                     │  Embedding │
-                     └────────────┘
+│                        EC2 Instance                                 │
+│  ┌───────────────────────────────────────────────────────────────┐  │
+│  │                        Nginx (Reverse Proxy)                  │  │
+│  │   ┌─────────────┐         ┌─────────────┐                    │  │
+│  │   │ Frontend    │         │ Backend     │                     │  │
+│  │   │ (React)     │         │ (FastAPI)   │                     │  │
+│  │   │ Port 3000   │         │ Port 8000   │                     │  │
+│  │   └─────────────┘         └──────┬──────┘                     │  │
+│  └─────────────────────────────────┼─────────────────────────────┘  │
+│                                    │                                │
+│                                    ▼                                │
+│  ┌─────────────────────────────────────────────────────────────────┐│
+│  │                     FastAPI Backend                             ││
+│  │                                                                  ││
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌────────┐││
+│  │  │  /chat-text │  │ /agora/start│  │/agora/stop  │  │/llm-   │││
+│  │  │             │  │             │  │             │  │proxy   │││
+│  │  │  Text Chat  │  │ Voice Agent │  │ Voice Agent │  │        │││
+│  │  │    Route    │  │    Route    │  │    Route    │  │ Route  │││
+│  │  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └───┬────┘││
+│  │         │                │                │             │      ││
+│  │         ▼                ▼                ▼             │      ││
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐      │      ││
+│  │  │  LLMService │  │  LLMService │  │  Agora API  │      │      ││
+│  │  │  + RAG      │  │  + RAG      │  │             │      │      ││
+│  │  └──────┬──────┘  └──────┬──────┘  └─────────────┘      │      ││
+│  │         │                │                │             │      ││
+│  │         ▼                ▼                ▼             │      ││
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐      │      ││
+│  │  │   Gemini    │  │   Gemini    │  │             │      │      ││
+│  │  │  Embedding  │  │  Embedding  │  │             │      │      ││
+│  │  └──────┬──────┘  └──────┬──────┘  └─────────────┘      │      ││
+│  │         │                │                │             │      ││
+│  │         ▼                ▼                ▼             │      ││
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐      │      ││
+│  │  │  S3 Vectors │  │  S3 Vectors │  │             │      │      ││
+│  │  │   (Index)   │  │   (Index)   │  │             │      │      ││
+│  │  └──────┬──────┘  └──────┬──────┘  └─────────────┘      │      ││
+│  │         │                │                │             │      ││
+│  │         ▼                ▼                ▼             │      ││
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐      │      ││
+│  │  │ S3 Payloads │  │ S3 Payloads │  │             │      │      ││
+│  │  │ (Full Text) │  │ (Full Text) │  │             │      │      ││
+│  │  └──────┬──────┘  └──────┬──────┘  └─────────────┘      │      ││
+│  │         │                │                │             │      ││
+│  └─────────┼────────────────┼──────────────────────────────────┼────┘│
+│            │                │                                  │     │
+└────────────┼────────────────┼──────────────────────────────────┼────┘
+             │                │                                  │
+             ▼                ▼                                  ▼
+      ┌────────────┐  ┌────────────┐                    ┌────────────┐
+      │  DynamoDB   │  │            │                    │   Agora    │
+      │  (Chat Logs)│  │            │                    │  RTC Cloud  │
+      └────────────┘  └────────────┘                    └────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                     CloudWatch (Monitoring)                         │
+│                   Monitors EC2 Instance & All Services               │
+└─────────────────────────────────────────────────────────────────────┘
 ```
+
+### Nginx Configuration
+
+- Routes `/` to Frontend (React dev server on port 3000)
+- Routes `/api/*` to Backend (FastAPI on port 8000)
+- Handles SSL termination
+- Serves static assets in production
+
+**Note:** CloudWatch monitors the entire EC2 instance including Nginx, Frontend, Backend, and all system metrics.
 
 ## Core Components
 
@@ -296,10 +330,19 @@ The trunk space is generous at 480 liters, perfect for family trips.
 
 ## Infrastructure
 
+### EC2 Instance
+
+| Component | Description |
+|-----------|-------------|
+| Nginx | Reverse proxy handling HTTPS, routing requests to frontend/backend |
+| Frontend | React application serving on port 3000 |
+| Backend | FastAPI application serving on port 8000 |
+
 ### AWS Services
 
 | Service | Purpose |
 |---------|---------|
+| EC2 | Host for Nginx, Frontend, and Backend |
 | DynamoDB | Chat log storage |
 | S3 Vectors | Vector search index |
 | S3 (Payload) | Source text storage |
