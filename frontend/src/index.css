@@ -116,3 +116,9 @@ code {
         border-bottom-color: inherit;
     }
 }
+
+@keyframes dash {
+    to {
+        stroke-dashoffset: -10;
+    }
+}
