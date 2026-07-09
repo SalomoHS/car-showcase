@@ -30,7 +30,42 @@ The primary goal is to increase customer engagement by offering an interactive p
 # Cloud Architecture
 <img width="2892" height="1575" alt="image" src="https://github.com/user-attachments/assets/a1848101-8d58-462b-a977-c0d8e1dc05d3" />
 
+ 
+## AWS Services
+ 
+| Service | Purpose |
+|---|---|
+| **CloudFront (CDN)** | Distributes static content (assets, 360° images, etc.) with low latency to customers |
+| **S3** | Object storage for static assets served through CloudFront |
+| **EC2** | Main application server that handles customer requests, orchestrates calls to the LLM (Claude), embeddings (Gemini), and voice/video integrations (Agora + Minimax) |
+| **DynamoDB** | Store chat history, sessions, and test drive booking metadata |
+| **S3 Vector** | Vector storage for embedding results from brochures/knowledge base, used in the RAG process |
+| **Gemini Embedding 2** | Embedding model that converts content (brochures, FAQs, etc.) into vector representations, stored in S3 Vector for retrieval |
+| **CloudWatch** | AWS infrastructure monitoring & observability. logs, metrics, system health dashboards |
+ 
+---
 
+ ## Inside EC2
+ 
+| Service | Purpose |
+|---|---|
+| **Nginx** | Reverse proxy / web server, routing requests to the FastAPI backend and serving the React build |
+| **React** | Frontend UI for the Virtual Dealer application |
+| **FastAPI** | Backend API for handles all application endpoint |
+ 
+---
+
+## External / Third-Party Services
+ 
+| Service | Purpose |
+|---|---|
+| **Claude** | Main LLM for RAG chat. Generates answers for customers based on context retrieved from the knowledge base (Mitsubishi brochures) |
+| **Langfuse** | Observability & tracing for the LLM. Tracking prompts, responses, latency, and conversation quality evaluation for RAG |
+| **Agora** | Real-time voice/video SDK. Used for a video call test drive feature or voice interaction with the assistant |
+| **Minimax** | Voice model (TTS/STT) connected to Agora. Powers the AI assistant's voice during voice/video interactions with the customer |
+ 
+---
+ 
 # AI Architecture
 <img width="3106" height="1337" alt="image" src="https://github.com/user-attachments/assets/2b94f573-19a9-4c38-917e-d520dea77480" />
 
@@ -157,8 +192,7 @@ S3 Vectors doesn't support storing full text content as metadata (it's severely 
     "cons": "...",
     "driving_experience": "...",
     "highlighted_features": "...",
-    "overall_conclusion": "...",
-    // field lain dari LLM extract
+    "overall_conclusion": "..."
   }
 ]
 ```
