@@ -92,3 +92,6 @@ vercel/
 .agents/
 .kiro/
 .emergent/
+
+.emergent/
+.claude/

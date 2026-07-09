@@ -9,7 +9,14 @@ import {
   ChevronDown,
   Check,
   Shield,
-  Timer
+  Timer,
+  Server,
+  Cloud,
+  Database,
+  Cpu,
+  Box,
+  Globe,
+  Zap
 } from "lucide-react";
 
 const LandingPage = () => {
@@ -18,6 +25,27 @@ const LandingPage = () => {
     if (e) e.preventDefault();
     const el = document.getElementById("overview");
     if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const architectureComponents = {
+    actors: [
+      { name: 'Customer', label: 'End User' },
+      { name: 'Developer', label: 'Engineering' },
+    ],
+    awsServices: [
+      { name: 'EC2', label: 'App Server' },
+      { name: 'S3', label: 'Storage' },
+      { name: 'DynamoDB', label: 'Database' },
+      { name: 'CloudWatch', label: 'Monitoring' },
+      { name: 'Gemini Embedding 2', label: 'AI Embedding' },
+      { name: 'S3 Vector', label: 'Vector DB' },
+    ],
+    external: [
+      { name: 'Claude', label: 'AI LLM' },
+      { name: 'Langfuse', label: 'Observability' },
+      { name: 'Agora', label: 'Video SDK' },
+      { name: 'Minimax', label: 'Video Gen' },
+    ]
   };
 
   const features = [
@@ -209,6 +237,105 @@ const LandingPage = () => {
                   <div className="landing-step-title">Ask Aria, then book</div>
                   <div className="landing-step-desc">Get spec answers and recommendations, then schedule a test drive.</div>
                 </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="landing-section landing-arch-section">
+            <div className="landing-section-head">
+              <div className="landing-kicker">Architecture</div>
+              <h2 className="landing-section-title">System design overview</h2>
+              <p className="landing-section-sub">
+                Scalable cloud infrastructure leveraging AWS services with integrated AI capabilities.
+              </p>
+            </div>
+
+            <div className="landing-arch-container">
+              <div className="landing-arch-row">
+                <div className="landing-arch-actors-col">
+                  {architectureComponents.actors.map((comp, idx) => (
+                    <div 
+                      key={`actor-${idx}`} 
+                      className="landing-arch-node landing-arch-node--actor"
+                      style={{ animationDelay: `${idx * 150}ms` }}
+                    >
+                      <span className="landing-arch-node-name">{comp.name}</span>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="landing-arch-main-col">
+                  <div className="landing-arch-aws-box">
+                    <div className="landing-arch-box-label">AWS</div>
+                    <div className="landing-arch-aws-grid">
+                      {architectureComponents.awsServices.map((comp, idx) => (
+                        <div 
+                          key={`aws-${idx}`} 
+                          className="landing-arch-node landing-arch-node--aws"
+                          style={{ animationDelay: `${300 + idx * 100}ms` }}
+                        >
+                          <span className="landing-arch-node-name">{comp.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="landing-arch-external-row">
+                <div className="landing-arch-external-grid">
+                  {architectureComponents.external.map((comp, idx) => (
+                    <div 
+                      key={`ext-${idx}`} 
+                      className="landing-arch-node landing-arch-node--external"
+                      style={{ animationDelay: `${900 + idx * 100}ms` }}
+                    >
+                      <span className="landing-arch-node-name">{comp.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="landing-arch-connections">
+                <svg className="landing-arch-svg" viewBox="0 0 800 400" preserveAspectRatio="xMidYMid meet">
+                  <defs>
+                    <linearGradient id="lineGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                      <stop offset="0%" stopColor="rgba(255,255,255,0.3)" />
+                      <stop offset="50%" stopColor="rgba(255,255,255,0.6)" />
+                      <stop offset="100%" stopColor="rgba(255,255,255,0.3)" />
+                    </linearGradient>
+                    <linearGradient id="lineGradientV" x1="0%" y1="0%" x2="0%" y2="100%">
+                      <stop offset="0%" stopColor="rgba(255,255,255,0.3)" />
+                      <stop offset="50%" stopColor="rgba(255,255,255,0.6)" />
+                      <stop offset="100%" stopColor="rgba(255,255,255,0.3)" />
+                    </linearGradient>
+                  </defs>
+                  <path className="landing-arch-path" d="M 50 80 L 180 80 L 180 200" fill="none" stroke="url(#lineGradient)" strokeWidth="2"/>
+                  <path className="landing-arch-path" d="M 50 200 L 180 200" fill="none" stroke="url(#lineGradient)" strokeWidth="2"/>
+                  <path className="landing-arch-path" d="M 200 140 L 280 140" fill="none" stroke="url(#lineGradient)" strokeWidth="2"/>
+                  <path className="landing-arch-path" d="M 200 180 L 280 180" fill="none" stroke="url(#lineGradient)" strokeWidth="2"/>
+                  <path className="landing-arch-path" d="M 200 220 L 280 220" fill="none" stroke="url(#lineGradient)" strokeWidth="2"/>
+                  <path className="landing-arch-path" d="M 340 180 L 520 180" fill="none" stroke="url(#lineGradient)" strokeWidth="2"/>
+                  <path className="landing-arch-path" d="M 340 180 L 520 260" fill="none" stroke="url(#lineGradientV)" strokeWidth="2"/>
+                  <path className="landing-arch-path" d="M 520 220 L 600 220" fill="none" stroke="url(#lineGradient)" strokeWidth="2"/>
+                  <path className="landing-arch-path" d="M 600 280 L 700 280" fill="none" stroke="url(#lineGradient)" strokeWidth="2"/>
+                  <path className="landing-arch-path" d="M 700 60 L 700 320" fill="none" stroke="url(#lineGradientV)" strokeWidth="2"/>
+                </svg>
+              </div>
+            </div>
+
+            <div className="landing-arch-legend">
+              <div className="landing-arch-legend-item">
+                <div className="landing-arch-legend-dot landing-arch-legend-dot--actor"></div>
+                <span>Actors</span>
+              </div>
+              <div className="landing-arch-legend-item">
+                <div className="landing-arch-legend-dot landing-arch-legend-dot--aws"></div>
+                <span>AWS Services</span>
+              </div>
+              <div className="landing-arch-legend-item">
+                <div className="landing-arch-legend-dot landing-arch-legend-dot--external"></div>
+                <span>Third-Party</span>
               </div>
             </div>
           </section>
